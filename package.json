@@ -1,6 +1,6 @@
 {
     "name": "la-station-launcher",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "description": "LA STATION B42 - Project Zomboid Launcher",
     "main": "dist-electron/main.js",
     "scripts": {
@@ -17,6 +17,8 @@
     "author": "LA STATION",
     "license": "MIT",
     "dependencies": {
+        "@types/adm-zip": "^0.5.7",
+        "adm-zip": "^0.5.16",
         "discord-rpc": "^4.0.1",
         "electron-updater": "^6.8.3",
         "framer-motion": "^11.0.0",
@@ -48,12 +50,14 @@
         },
         "win": {
             "icon": "assets/icon.ico",
-            "target": [{
-                "target": "nsis",
-                "arch": [
-                    "x64"
-                ]
-            }]
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ]
         },
         "nsis": {
             "oneClick": false,
@@ -67,15 +71,19 @@
             "dist-electron/**/*",
             "assets/**/*"
         ],
-        "extraResources": [{
-            "from": "assets",
-            "to": "assets"
-        }],
-        "publish": [{
-            "provider": "github",
-            "owner": "MandoDB",
-            "repo": "la-station-launcher",
-            "releaseType": "release"
-        }]
+        "extraResources": [
+            {
+                "from": "assets",
+                "to": "assets"
+            }
+        ],
+        "publish": [
+            {
+                "provider": "github",
+                "owner": "MandoDB",
+                "repo": "la-station-launcher",
+                "releaseType": "release"
+            }
+        ]
     }
 }
