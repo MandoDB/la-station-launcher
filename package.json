@@ -1,6 +1,6 @@
 {
     "name": "la-station-launcher",
-    "version": "1.0.6",
+    "version": "1.1.0",
     "description": "LA STATION B42 - Project Zomboid Launcher",
     "main": "dist-electron/main.js",
     "scripts": {
