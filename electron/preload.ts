@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
   maximizeWindow: () => ipcRenderer.send('window:maximize'),
   closeWindow: () => ipcRenderer.send('window:close'),
+  closeWindowConfirmed: () => ipcRenderer.send('window:close-confirmed'),
+  onConfirmClose: (cb: () => void) => ipcRenderer.on('window:confirm-close', () => cb()),
+  killPZ: () => ipcRenderer.invoke('session:kill-pz'),
 
   // ── Jeu ───────────────────────────────────────────────────────────────────
   detectGame: () => ipcRenderer.invoke('game:detect'),
@@ -59,6 +62,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDiscordUser: (cb: (u: any) => void) => ipcRenderer.on('discord:user-ready', (_e, d) => cb(d)),
   onDiscordConnecting: (cb: (v: boolean) => void) => ipcRenderer.on('discord:connecting', (_e, d) => cb(d)),
   onServerPlayers: (cb: (info: any) => void) => ipcRenderer.on('server:players', (_e, d) => cb(d)),
+  onAutoRestoreDone: (cb: (d: any) => void) => ipcRenderer.on('session:auto-restore-done', (_e, d) => cb(d)),
   onPatchAutoCheck: (cb: (d: any) => void) => ipcRenderer.on('patch:auto-check', (_e, d) => cb(d)),
   onUpdaterDownloaded: (cb: (d: any) => void) => ipcRenderer.on('updater:downloaded', (_e, d) => cb(d)),
 

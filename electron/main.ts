@@ -6,6 +6,9 @@ import {
     shell,
     nativeTheme,
 } from 'electron';
+import { config as loadDotenv } from 'dotenv';
+// Charge .env depuis la racine du projet (dev) ou à côté de l'exe (prod)
+loadDotenv({ path: require('path').resolve(__dirname, '..', '.env') });
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { PatchManager } from './patchManager';
@@ -23,7 +26,8 @@ const SERVER_QUERY_PORT = 16263;
 const SERVER_POLL_INTERVAL_MS = 30_000;
 
 // ─── Config patch auto-check ─────────────────────────────────────────────────
-const PATCH_CHECK_INTERVAL_MS = 30_000;
+// 5 minutes pour rester sous le rate limit GitHub anonyme (60 req/h = 1/min max)
+const PATCH_CHECK_INTERVAL_MS = 5 * 60_000;
 let patchCheckTimer: NodeJS.Timeout | null = null;
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -91,9 +95,11 @@ function createWindow(): void {
     mainWindow.on('closed', () => { mainWindow = null; });
 
     // Démarrer la connexion Discord + polling patch après chargement
+    // + vérifier session.lock (crash au lancement précédent)
     mainWindow.webContents.once('did-finish-load', () => {
         if (isRpcEnabled()) setTimeout(() => discordManager?.connect(), 2000);
         startPatchPolling();
+        checkOrphanSession();
     });
 }
 
@@ -167,6 +173,41 @@ function setDiscordPresence(
     discordManager?.setPresence(state, ts, pc);
 }
 
+// ── Restauration automatique au démarrage (session.lock orphelin) ─────────────
+async function checkOrphanSession(): Promise<void> {
+    if (!patchManager) return;
+    const lock = patchManager.readLock();
+    if (!lock) return; // Pas de lock → tout est propre
+
+    const { gamePath, timestamp } = lock;
+    const age = Math.round((Date.now() - timestamp) / 1000 / 60); // en minutes
+    console.log(`[Main] session.lock détecté (${age} min) → gamePath: ${gamePath}`);
+
+    // Notifier le renderer qu'une restauration est en cours
+    mainWindow?.webContents.send('session:update', { status: 'restoring' });
+    mainWindow?.webContents.send('log:entry', `[Démarrage] Session orpheline détectée (crash il y a ~${age} min). Restauration en cours...`);
+
+    if (existsSync(gamePath)) {
+        const result = await patchManager.restoreBackup(gamePath);
+        if (result.success) {
+            patchManager.deleteLock();
+            mainWindow?.webContents.send('log:entry', '[Démarrage] Restauration automatique réussie. JAR propre.');
+            mainWindow?.webContents.send('session:auto-restore-done', { success: true });
+        } else {
+            mainWindow?.webContents.send('log:entry', `[Démarrage] ERREUR restauration : ${result.error}`);
+            mainWindow?.webContents.send('session:auto-restore-done', { success: false, error: result.error });
+        }
+    } else {
+        // gamePath introuvable (jeu désinstallé/déplacé) → supprimer le lock quand même
+        mainWindow?.webContents.send('log:entry', `[Démarrage] Dossier jeu introuvable (${gamePath}). Lock supprimé.`);
+        patchManager.deleteLock();
+        mainWindow?.webContents.send('session:auto-restore-done', { success: true });
+    }
+
+    // Revenir à idle après la restauration
+    mainWindow?.webContents.send('session:update', { status: 'idle' });
+}
+
 function initManagers(): void {
     const appDataPath = join(app.getPath('appData'), 'PZLauncher');
     if (!existsSync(appDataPath)) mkdirSync(appDataPath, { recursive: true });
@@ -214,7 +255,28 @@ function initManagers(): void {
 // ── Fenêtre ──────────────────────────────────────────────────────────────────
 ipcMain.on('window:minimize', () => mainWindow?.minimize());
 ipcMain.on('window:maximize', () => mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize());
-ipcMain.on('window:close', () => mainWindow?.close());
+
+// Fermeture : si une session est active, demander confirmation au renderer.
+// Sinon fermer directement.
+ipcMain.on('window:close', () => {
+    if (sessionManager?.isSessionActive()) {
+        // Envoyer une demande de confirmation au renderer (modale côté UI)
+        mainWindow?.webContents.send('window:confirm-close');
+    } else {
+        mainWindow?.close();
+    }
+});
+
+// Confirmation de fermeture : tuer PZ, restaurer, puis fermer
+ipcMain.on('window:close-confirmed', async () => {
+    await sessionManager?.killPZ();
+    mainWindow?.close(); // déclenche before-quit qui restaure le JAR
+});
+
+// Tuer PZ sans fermer le launcher (bouton "Quitter la session")
+ipcMain.handle('session:kill-pz', async () => {
+    await sessionManager?.killPZ();
+});
 
 // ── Jeu ──────────────────────────────────────────────────────────────────────
 ipcMain.handle('game:detect', async () => new GameDetector().detect());
@@ -311,6 +373,7 @@ app.on('before-quit', async (event) => {
         try {
             const s = sessionManager.getStatus();
             if (s.gamePath) await patchManager!.restoreBackup(s.gamePath);
+            patchManager!.deleteLock();
         } catch (e) { console.error('[Main] Restore failed on quit:', e); }
         finally { app.exit(0); }
     }

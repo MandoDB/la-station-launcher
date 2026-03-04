@@ -50,6 +50,7 @@ export type PatchProgressCallback = (event: string, data: any) => void;
 export class PatchManager {
     private appDataPath: string;
     private versionFilePath: string;
+    private lockFilePath: string;
     private classDir: string;
     private sendToRenderer: PatchProgressCallback;
     private _lastRemote: VersionInfo | null = null;
@@ -57,11 +58,49 @@ export class PatchManager {
     constructor(appDataPath: string, sendToRenderer: PatchProgressCallback) {
         this.appDataPath = appDataPath;
         this.versionFilePath = join(appDataPath, 'version.json');
+        this.lockFilePath = join(appDataPath, 'session.lock');
         this.classDir = join(appDataPath, 'classes');
         this.sendToRenderer = sendToRenderer;
 
         if (!existsSync(this.classDir)) {
             mkdirSync(this.classDir, { recursive: true });
+        }
+    }
+
+    // ── Session lock ──────────────────────────────────────────────────────────
+    // Créé juste avant l'injection du patch, supprimé après restauration réussie.
+    // Si présent au démarrage → crash détecté → restauration automatique.
+
+    createLock(gamePath: string): void {
+        try {
+            writeFileSync(this.lockFilePath, JSON.stringify({
+                gamePath,
+                timestamp: Date.now(),
+            }), 'utf-8');
+            this.log('session.lock créé.');
+        } catch (e: any) {
+            this.log(`Impossible de créer session.lock : ${e.message}`);
+        }
+    }
+
+    deleteLock(): void {
+        try {
+            if (existsSync(this.lockFilePath)) {
+                fs.unlinkSync(this.lockFilePath);
+                this.log('session.lock supprimé.');
+            }
+        } catch (e: any) {
+            this.log(`Impossible de supprimer session.lock : ${e.message}`);
+        }
+    }
+
+    // Retourne le gamePath stocké dans le lock, ou null si pas de lock
+    readLock(): { gamePath: string; timestamp: number } | null {
+        try {
+            if (!existsSync(this.lockFilePath)) return null;
+            return JSON.parse(readFileSync(this.lockFilePath, 'utf-8'));
+        } catch {
+            return null;
         }
     }
 
@@ -82,17 +121,28 @@ export class PatchManager {
         return new Promise((resolve) => {
             if (maxRedirects <= 0) { resolve(null); return; }
             const lib = url.startsWith('https') ? https : http;
-            const options = {
-                timeout: 10000,
-                headers: {
-                    'Cache-Control': 'no-cache, no-store',
-                    'Pragma': 'no-cache',
-                    'User-Agent': 'LA-STATION-Launcher',
-                },
+            const headers: Record<string, string> = {
+                'Cache-Control': 'no-cache, no-store',
+                'Pragma': 'no-cache',
+                'User-Agent': 'LA-STATION-Launcher',
             };
+            // Token optionnel pour passer de 60 req/h à 5000 req/h
+            const ghToken = process.env.GITHUB_TOKEN;
+            if (ghToken && url.includes('api.github.com')) {
+                headers['Authorization'] = `Bearer ${ghToken}`;
+            }
+            const options = { timeout: 10000, headers };
             const req = lib.get(url, options, (res) => {
                 if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
                     resolve(this.fetchText(res.headers.location, maxRedirects - 1));
+                    return;
+                }
+                // Rate limit GitHub (403 avec message ou 429)
+                if (res.statusCode === 403 || res.statusCode === 429) {
+                    const reset = res.headers['x-ratelimit-reset'];
+                    const resetDate = reset ? new Date(Number(reset) * 1000).toLocaleTimeString() : 'inconnu';
+                    this.log(`GitHub rate limit atteint. Réinitialisation à ${resetDate}. Vérification ignorée.`);
+                    resolve(null);
                     return;
                 }
                 if (res.statusCode !== 200) {

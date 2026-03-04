@@ -85,6 +85,9 @@ declare global {
             minimizeWindow: () => void;
             maximizeWindow: () => void;
             closeWindow: () => void;
+            closeWindowConfirmed: () => void;
+            onConfirmClose: (callback: () => void) => void;
+            killPZ: () => Promise<void>;
 
             // Jeu
             detectGame: () => Promise<DetectionResult>;
@@ -136,6 +139,7 @@ declare global {
             onDiscordUser: (callback: (user: DiscordUser | null) => void) => void;
             onDiscordConnecting: (callback: (v: boolean) => void) => void;
             onServerPlayers: (callback: (info: ServerInfo) => void) => void;
+            onAutoRestoreDone: (callback: (data: { success: boolean; error?: string }) => void) => void;
             onPatchAutoCheck: (callback: (data: { check: PatchCheckResult; version: VersionInfo | null }) => void) => void;
 
             // Updater launcher

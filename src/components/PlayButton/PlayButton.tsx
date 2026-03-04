@@ -24,6 +24,7 @@ const stepLabels: Record<string, string> = {
 export const PlayButton: React.FC = () => {
     const { state, handlePlay, handleQuitSession } = useLauncher();
     const { sessionStatus, sessionElapsed, patchProgress, gamePath } = state;
+    const [showQuitConfirm, setShowQuitConfirm] = useState(false);
 
     const isIdle = sessionStatus === 'idle' || sessionStatus === 'done';
     const isPatching = sessionStatus === 'patching';
@@ -181,7 +182,7 @@ export const PlayButton: React.FC = () => {
                         {/* Bouton quitter */}
                         <motion.button
                             className={styles.quitBtn}
-                            onClick={handleQuitSession}
+                            onClick={() => setShowQuitConfirm(true)}
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.97 }}
                         >
@@ -212,6 +213,56 @@ export const PlayButton: React.FC = () => {
                     </motion.div>
                 )}
 
+            </AnimatePresence>
+
+            {/* ── Modale confirmation quitter la session ────────────────── */}
+            <AnimatePresence>
+                {showQuitConfirm && (
+                    <motion.div
+                        className={styles.confirmOverlay}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                    >
+                        <motion.div
+                            className={styles.confirmBox}
+                            initial={{ scale: 0.88, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.88, opacity: 0 }}
+                            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                        >
+                            <svg className={styles.confirmIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                            </svg>
+                            <p className={styles.confirmTitle}>Quitter la session</p>
+                            <p className={styles.confirmMsg}>
+                                Vous allez quitter le jeu.<br/>
+                                Project Zomboid sera <strong>fermé</strong> et le patch restauré.
+                            </p>
+                            <div className={styles.confirmBtns}>
+                                <motion.button
+                                    className={styles.confirmCancel}
+                                    onClick={() => setShowQuitConfirm(false)}
+                                    whileHover={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                                    whileTap={{ scale: 0.96 }}
+                                >
+                                    Annuler
+                                </motion.button>
+                                <motion.button
+                                    className={styles.confirmQuit}
+                                    onClick={async () => {
+                                        setShowQuitConfirm(false);
+                                        await window.electronAPI.killPZ();
+                                    }}
+                                    whileHover={{ backgroundColor: 'rgba(220,60,60,0.85)' }}
+                                    whileTap={{ scale: 0.96 }}
+                                >
+                                    Quitter quand même
+                                </motion.button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
             </AnimatePresence>
         </div>
     );

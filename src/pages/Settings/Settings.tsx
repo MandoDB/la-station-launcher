@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import styles from './Settings.module.css';
 
-export const MENTIONS_LEGALES_URL = 'https://example.com/mentions-legales'; // ← Remplacer par le lien fourni
+export const MENTIONS_LEGALES_URL = 'https://wiki.la-station.org/s/mentions-legales'; // ← Remplacer par le lien fourni
 
 interface SettingsProps {
     onClose: () => void;

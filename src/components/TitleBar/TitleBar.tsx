@@ -17,7 +17,8 @@ interface DiscordUser {
 export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
     const { state } = useLauncher();
     const [discordUser, setDiscordUser] = useState<DiscordUser | null>(null);
-    const [connecting, setConnecting] = useState(true);  // true au démarrage
+    const [connecting, setConnecting] = useState(true);
+    const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
     // ── Écouter les événements Discord ────────────────────────────────────────
     useEffect(() => {
@@ -43,10 +44,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
         // Timeout de sécurité — si Discord ne répond pas en 25s, on arrête le "Connexion..."
         const safetyTimer = setTimeout(() => setConnecting(false), 25000);
 
+        // Demande de confirmation de fermeture depuis le main process
+        window.electronAPI.onConfirmClose(() => setShowCloseConfirm(true));
+
         return () => {
             clearTimeout(safetyTimer);
             window.electronAPI.removeAllListeners('discord:user-ready');
             window.electronAPI.removeAllListeners('discord:connecting');
+            window.electronAPI.removeAllListeners('window:confirm-close');
         };
     }, []);
 
@@ -57,6 +62,50 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
         : null;
 
     return (
+        <>
+        {/* ── Modale confirmation fermeture ──────────────────── */}
+        <AnimatePresence>
+            {showCloseConfirm && (
+                <motion.div
+                    className={styles.confirmOverlay}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                >
+                    <motion.div
+                        className={styles.confirmBox}
+                        initial={{ scale: 0.88, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.88, opacity: 0 }}
+                        transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                    >
+                        <svg className={styles.confirmIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        </svg>
+                        <p className={styles.confirmTitle}>Quitter le launcher</p>
+                        <p className={styles.confirmMsg}>Vous êtes actuellement en jeu.<br/>Fermer le launcher <strong>mettra fin à la session</strong> et fermera Project Zomboid.</p>
+                        <div className={styles.confirmBtns}>
+                            <motion.button
+                                className={styles.confirmCancel}
+                                onClick={() => setShowCloseConfirm(false)}
+                                whileHover={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                                whileTap={{ scale: 0.96 }}
+                            >
+                                Annuler
+                            </motion.button>
+                            <motion.button
+                                className={styles.confirmQuit}
+                                onClick={() => { setShowCloseConfirm(false); window.electronAPI.closeWindowConfirmed(); }}
+                                whileHover={{ backgroundColor: 'rgba(220,60,60,0.85)' }}
+                                whileTap={{ scale: 0.96 }}
+                            >
+                                Quitter quand même
+                            </motion.button>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
         <div className={styles.titleBar}>
             {/* Drag region */}
             <div className={styles.dragRegion} />
@@ -189,5 +238,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
                 </div>
             </div>
         </div>
+        </>
     );
 };

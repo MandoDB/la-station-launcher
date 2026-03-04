@@ -56,6 +56,16 @@ export class SessionManager {
         }
     }
 
+    // ── Fermeture forcée de PZ ────────────────────────────────────────────────
+    async killPZ(): Promise<void> {
+        try {
+            await execAsync(`taskkill /IM "${PZ_PROCESS_NAME}" /F`);
+            this.log('Project Zomboid terminé de force.');
+        } catch {
+            // Processus déjà fermé ou introuvable — pas d'erreur bloquante
+        }
+    }
+
     // ── Lancement de PZ via Steam ─────────────────────────────────────────────
     private async launchPZ(): Promise<void> {
         this.log('Lancement de Project Zomboid via Steam...');
@@ -127,6 +137,7 @@ export class SessionManager {
             });
         } else {
             this.log('Session terminée - Patch retiré avec succès.');
+            patchManager.deleteLock();
             this.setState({ status: 'done' });
             this.sendToRenderer('session:update', {
                 status: 'done',
@@ -154,26 +165,31 @@ export class SessionManager {
         this.sendToRenderer('session:update', { status: 'patching' });
 
         try {
-            // Étape 1: Vérifier + Appliquer le patch
+            // Étape 1: Créer le session.lock AVANT toute modification du JAR
             this.log('=== Début de la session ===');
+            patchManager.createLock(gamePath);
+
+            // Étape 2: Vérifier + Appliquer le patch
             const patchResult = await patchManager.applyPatch(gamePath);
 
             if (!patchResult.success) {
+                patchManager.deleteLock(); // Patch échoué avant injection → pas de JAR modifié
                 throw new Error(`Échec du patch: ${patchResult.error}`);
             }
 
-            // Étape 2: Lancer PZ
+            // Étape 3: Lancer PZ
             this.setState({ status: 'launching' });
             this.sendToRenderer('session:update', { status: 'launching' });
             await this.launchPZ();
 
-            // Étape 3: Attendre que le processus démarre
+            // Étape 4: Attendre que le processus démarre
             const started = await this.waitForProcessStart();
 
             if (!started) {
                 // Timeout → restaurer et signaler l'erreur
                 this.log('Timeout de démarrage. Restauration...');
                 await patchManager.restoreBackup(gamePath);
+                patchManager.deleteLock();
                 this.setState({ status: 'idle' });
                 this.sendToRenderer('session:update', { status: 'idle' });
                 return {
@@ -194,6 +210,7 @@ export class SessionManager {
             return { success: true };
         } catch (err: any) {
             this.log(`Erreur session: ${err.message}`);
+            patchManager.deleteLock(); // Nettoyage en cas d'erreur inattendue
             this.setState({ status: 'error', error: err.message });
             this.sendToRenderer('session:update', { status: 'error', error: err.message });
             return { success: false, error: err.message };

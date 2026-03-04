@@ -196,6 +196,25 @@ export function LauncherProvider({ children }: { children: React.ReactNode }) {
                 dispatch({ type: 'ADD_LOG', payload: log });
             });
 
+            // Restauration automatique au démarrage (session.lock orphelin)
+            window.electronAPI.onAutoRestoreDone(({ success, error }) => {
+                if (success) {
+                    addToast({
+                        type: 'warning',
+                        title: 'Restauration automatique effectuée',
+                        message: 'Une session interrompue (crash ?) a été détectée. Le JAR a été restauré.',
+                        duration: 8000,
+                    });
+                } else {
+                    addToast({
+                        type: 'error',
+                        title: 'Restauration automatique échouée',
+                        message: error ?? 'Erreur inconnue — vérifiez les logs.',
+                        duration: 12000,
+                    });
+                }
+            });
+
             // Auto-check patch toutes les 30s depuis le main process
             window.electronAPI.onPatchAutoCheck(({ check, version }) => {
                 dispatch({ type: 'SET_PATCH_CHECK', payload: check });
@@ -239,6 +258,7 @@ export function LauncherProvider({ children }: { children: React.ReactNode }) {
             window.electronAPI.removeAllListeners('log:entry');
             window.electronAPI.removeAllListeners('session:force-restore-start');
             window.electronAPI.removeAllListeners('patch:auto-check');
+            window.electronAPI.removeAllListeners('session:auto-restore-done');
             window.electronAPI.removeAllListeners('updater:downloaded');
         };
     }, []);
