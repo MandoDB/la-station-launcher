@@ -42,11 +42,12 @@
     },
     "build": {
         "appId": "com.lastation.b42launcher",
-        "productName": "LA STATION Launcher",
+        "productName": "LA STATION - LAUNCHER",
         "directories": {
             "output": "release"
         },
         "win": {
+            "icon": "assets/icon.ico",
             "target": [{
                 "target": "nsis",
                 "arch": [
@@ -59,7 +60,7 @@
             "allowToChangeInstallationDirectory": true,
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
-            "shortcutName": "LA STATION Launcher"
+            "shortcutName": "LA STATION - LAUNCHER"
         },
         "files": [
             "dist/**/*",
