@@ -11,6 +11,7 @@ import { config as loadDotenv } from 'dotenv';
 loadDotenv({ path: require('path').resolve(__dirname, '..', '.env') });
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { autoUpdater } from 'electron-updater';
 import { PatchManager } from './patchManager';
 import { GameDetector } from './gameDetector';
 import { SessionManager } from './sessionManager';
@@ -361,6 +362,39 @@ ipcMain.handle('settings:set', async (_e, patch: Partial<AppSettings>) => {
 // ── Utilitaires ───────────────────────────────────────────────────────────────
 ipcMain.on('shell:open-external', (_e, url: string) => shell.openExternal(url));
 
+// ── Auto-updater launcher ─────────────────────────────────────────────────────
+let launcherUpdateReady = false;
+
+function initAutoUpdater(): void {
+    // En dev, electron-updater ne peut pas vérifier → on désactive silencieusement
+    if (!app.isPackaged) return;
+
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-downloaded', (info) => {
+        launcherUpdateReady = true;
+        mainWindow?.webContents.send('updater:downloaded', {
+            version: info.version,
+            releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : null,
+        });
+    });
+
+    autoUpdater.on('error', (err) => {
+        console.error('[AutoUpdater]', err?.message ?? err);
+    });
+
+    // Vérification au démarrage (légère — pas de popup native)
+    autoUpdater.checkForUpdates().catch((err) => {
+        console.warn('[AutoUpdater] checkForUpdates failed:', err?.message ?? err);
+    });
+}
+
+ipcMain.handle('updater:is-ready', () => launcherUpdateReady);
+ipcMain.handle('updater:quit-and-install', () => {
+    if (launcherUpdateReady) autoUpdater.quitAndInstall(false, true);
+});
+
 // ── Fermeture propre ──────────────────────────────────────────────────────────
 app.on('before-quit', async (event) => {
     stopPatchPolling();
@@ -382,6 +416,7 @@ app.on('before-quit', async (event) => {
 app.whenReady().then(() => {
     initManagers();
     createWindow();
+    initAutoUpdater();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
