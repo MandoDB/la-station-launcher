@@ -1,0 +1,282 @@
+/* ── PlayButton — Blanc Néon sur Noir ──────────────────────── */
+
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ── Bouton principal ────────────────────────────────────────── */
+.playBtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 240px;
+  height: 58px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+/* Fond subtil */
+.playBtn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 200ms ease;
+}
+
+.playBtn:hover {
+  border-color: rgba(255, 255, 255, 0.65);
+  box-shadow:
+    0 0 16px rgba(255, 255, 255, 0.18),
+    0 0 40px rgba(255, 255, 255, 0.06),
+    inset 0 0 16px rgba(255, 255, 255, 0.03);
+}
+
+.playBtn:hover::before { background: rgba(255, 255, 255, 0.05); }
+.playBtn:active { transform: scale(0.984); }
+
+.playBtn.disabled {
+  border-color: rgba(255, 255, 255, 0.06);
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Scan line hover */
+.playBtn::after {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+  transition: top 350ms ease;
+}
+.playBtn:hover::after { top: 110%; }
+
+/* Glow respirant derrière */
+.btnGlow {
+  position: absolute;
+  inset: -50px;
+  background: radial-gradient(ellipse at center,
+    rgba(255, 255, 255, 0.06) 0%,
+    transparent 65%
+  );
+  animation: glowPulse 5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.93); }
+  50%       { opacity: 1;   transform: scale(1.05); }
+}
+
+.playIcon {
+  display: flex;
+  align-items: center;
+  color: #ffffff;
+  z-index: 1;
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.7));
+}
+
+.btnLabel {
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: 0.22em;
+  color: #ffffff;
+  z-index: 1;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.6);
+}
+
+.btnSublabel {
+  position: absolute;
+  bottom: 8px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.versionBadge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.08em;
+}
+
+/* ── Steps patch ─────────────────────────────────────────────── */
+.progressWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 380px;
+}
+
+.stepsContainer { display: flex; align-items: center; }
+
+.step {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  opacity: 0.25; transition: opacity 300ms ease;
+}
+.step.stepDone   { opacity: 0.6; }
+.step.stepActive { opacity: 1; }
+
+.stepDot {
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  transition: all 300ms ease;
+}
+.step.stepDone   .stepDot { border-color: var(--color-success); color: var(--color-success); }
+.step.stepActive .stepDot { border-color: rgba(255,255,255,0.6); box-shadow: 0 0 6px rgba(255,255,255,0.3); }
+
+.stepDotInner {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #ffffff;
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(1.3); }
+}
+
+.stepLabel {
+  font-size: 9px; font-weight: 600; letter-spacing: 0.06em;
+  color: var(--color-text-secondary); white-space: nowrap;
+}
+.step.stepActive .stepLabel { color: #ffffff; }
+.step.stepDone   .stepLabel { color: var(--color-success); }
+
+.stepConnector {
+  width: 32px; height: 1px;
+  background: rgba(255,255,255,0.1);
+  margin-bottom: 16px;
+  transition: background 300ms ease;
+}
+.stepConnector.connectorDone { background: rgba(74, 222, 128, 0.4); }
+
+.progressBarWrapper {
+  position: relative; width: 100%; height: 1px;
+  background: rgba(255,255,255,0.08); border-radius: 1px; overflow: visible;
+}
+
+.progressBar {
+  height: 100%;
+  background: #ffffff;
+  border-radius: 1px;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.7);
+}
+
+.progressPercent {
+  position: absolute; right: 0; top: -18px;
+  font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.7);
+}
+
+.launchingState {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px; color: var(--color-text-secondary);
+}
+
+/* ── Running ─────────────────────────────────────────────────── */
+.runningWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.sessionTimer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.35);
+  letter-spacing: 0.04em;
+}
+
+/* Bouton quitter */
+.quitBtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 280px;
+  height: 56px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.quitBtn:hover {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.04);
+  box-shadow:
+    0 0 18px rgba(248, 113, 113, 0.12),
+    inset 0 0 14px rgba(248, 113, 113, 0.03);
+  color: rgba(248, 113, 113, 0.9);
+}
+
+.quitLabel {
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 0.16em;
+  z-index: 1;
+  transition: color 200ms;
+}
+
+/* Ligne de scan au hover */
+.quitScanLine {
+  position: absolute;
+  top: -100%;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(248,113,113,0.5), transparent);
+  transition: top 350ms ease;
+  pointer-events: none;
+}
+.quitBtn:hover .quitScanLine { top: 110%; }
+
+
+/* ── Restoring ─────────────────────────────────────────────────── */
+.restoringWrapper {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.restoringLabel {
+  font-size: 12px; letter-spacing: 0.06em; color: var(--color-warning);
+}
+
+/* ── Spinner ─────────────────────────────────────────────────── */
+.spinner {
+  width: 24px; height: 24px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-top-color: rgba(255,255,255,0.6);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

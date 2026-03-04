@@ -1,0 +1,258 @@
+.titleBar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 12px;
+  background: rgba(0, 0, 0, 0.95);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+
+/* Zone draggable */
+.dragRegion {
+  position: absolute;
+  inset: 0;
+  right: 140px;
+  -webkit-app-region: drag;
+  cursor: move;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag;
+  z-index: 1;
+}
+
+.logoMark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.logoIcon {
+  font-size: 20px;
+  color: var(--color-accent);
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.4));
+}
+
+
+.title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 0.15em;
+  color: var(--color-text-primary);
+}
+
+.subtitle {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--color-accent);
+  opacity: 0.8;
+  padding: 2px 6px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 3px;
+}
+
+.center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  -webkit-app-region: no-drag;
+}
+
+.statusIndicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  color: var(--color-success);
+  padding: 4px 10px;
+  background: var(--color-success-glow);
+  border: 1px solid rgba(76, 175, 130, 0.3);
+  border-radius: 20px;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.statusDot.running {
+  background: var(--color-success);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(76, 175, 130, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(76, 175, 130, 0); }
+}
+
+/* Bouton Paramètres (en haut à droite) */
+.settingsBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  -webkit-app-region: no-drag;
+}
+
+.settingsBtn:hover {
+  color: var(--color-text-primary);
+}
+
+/* Contrôles */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+  z-index: 1;
+}
+
+/* Zone droite = badge Discord + contrôles */
+.rightArea {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+  z-index: 1;
+}
+
+/* ── État "Connexion..." ─────────────────────────────────────── */
+.discordConnecting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+}
+
+.connectingLabel {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.08em;
+}
+
+.connectingDots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.connectingDots span {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.25);
+  animation: dotBlink 1.2s ease-in-out infinite;
+}
+.connectingDots span:nth-child(2) { animation-delay: 0.2s; }
+.connectingDots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotBlink {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  40%            { opacity: 1;   transform: scale(1); }
+}
+
+/* Badge Discord */
+
+.discordBadge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px 4px 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 20px;
+  cursor: default;
+  transition: background 200ms;
+}
+.discordBadge:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.discordAvatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.discordAvatarPlaceholder {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.6);
+}
+
+.discordUsername {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.02em;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discordDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 4px rgba(74, 222, 128, 0.7);
+  flex-shrink: 0;
+}
+
+.controlBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.controlBtn:hover {
+  color: var(--color-text-primary);
+}
+
+.closeBtn:hover {
+  color: #fff !important;
+}
+

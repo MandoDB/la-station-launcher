@@ -1,0 +1,91 @@
+.bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  background: #000000;
+}
+
+/* ── Lumière centrale très subtile ─────────────────────────── */
+.fog1 {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 60% 35% at 50% 45%,
+    rgba(255, 255, 255, 0.025) 0%,
+    transparent 70%
+  );
+  animation: breathe 8s ease-in-out infinite alternate;
+}
+
+/* ── Lueur basse ────────────────────────────────────────────── */
+.fog2 {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 80% 25% at 50% 110%,
+    rgba(255, 255, 255, 0.03) 0%,
+    transparent 65%
+  );
+}
+
+@keyframes breathe {
+  from { opacity: 0.5; transform: scale(0.97); }
+  to   { opacity: 1;   transform: scale(1.03); }
+}
+
+/* ── Grille perspective blanche ─────────────────────────────── */
+.grid {
+  position: absolute;
+  bottom: 0;
+  left: -20%;
+  right: -20%;
+  height: 200px;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 55px 55px;
+  transform: perspective(380px) rotateX(58deg);
+  transform-origin: bottom center;
+  mask-image: linear-gradient(to top, rgba(0,0,0,0.4) 0%, transparent 75%);
+}
+
+/* ── Particules ─────────────────────────────────────────────── */
+.particles { position: absolute; inset: 0; }
+
+.particle {
+  position: absolute;
+  width: 1.5px;
+  height: 1.5px;
+  border-radius: 50%;
+  background: #ffffff;
+  opacity: 0;
+  left: calc(var(--i) * 9%);
+  bottom: 20%;
+  animation: particleFloat calc(8s + var(--i) * 0.5s) ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.8s);
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.9);
+}
+
+@keyframes particleFloat {
+  0%   { opacity: 0; transform: translateY(0) scale(1); }
+  20%  { opacity: 0.5; }
+  80%  { opacity: 0.1; }
+  100% { opacity: 0; transform: translateY(-90px) scale(0); }
+}
+
+/* ── Horizon ────────────────────────────────────────────────── */
+.horizon {
+  position: absolute;
+  bottom: 28%;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 20%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.06) 80%,
+    transparent 100%
+  );
+}

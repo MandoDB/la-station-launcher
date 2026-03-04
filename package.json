@@ -1,0 +1,80 @@
+{
+    "name": "la-station-launcher",
+    "version": "1.0.0",
+    "description": "LA STATION B42 - Project Zomboid Launcher",
+    "main": "dist-electron/main.js",
+    "scripts": {
+        "dev": "vite",
+        "postinstall": "patch-package",
+        "build": "tsc && vite build && electron-builder",
+        "release": "tsc && vite build && electron-builder --publish always",
+        "build:renderer": "vite build",
+        "preview": "vite preview",
+        "electron:dev": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [],
+    "author": "LA STATION",
+    "license": "MIT",
+    "dependencies": {
+        "discord-rpc": "^4.0.1",
+        "electron-updater": "^6.8.3",
+        "framer-motion": "^11.0.0",
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0"
+    },
+    "devDependencies": {
+        "@types/discord-rpc": "^4.0.10",
+        "@types/node": "^20.0.0",
+        "@types/react": "^18.3.0",
+        "@types/react-dom": "^18.3.0",
+        "@vitejs/plugin-react": "^4.3.0",
+        "concurrently": "^8.2.0",
+        "cross-env": "^7.0.3",
+        "electron": "^29.0.0",
+        "electron-builder": "^24.9.0",
+        "patch-package": "^8.0.1",
+        "typescript": "^5.4.0",
+        "vite": "^5.2.0",
+        "vite-plugin-electron": "^0.28.0",
+        "vite-plugin-electron-renderer": "^0.14.0",
+        "wait-on": "^7.2.0"
+    },
+    "build": {
+        "appId": "com.lastation.b42launcher",
+        "productName": "LA STATION Launcher",
+        "directories": {
+            "output": "release"
+        },
+        "win": {
+            "target": [{
+                "target": "nsis",
+                "arch": [
+                    "x64"
+                ]
+            }]
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "LA STATION Launcher"
+        },
+        "files": [
+            "dist/**/*",
+            "dist-electron/**/*",
+            "assets/**/*"
+        ],
+        "extraResources": [{
+            "from": "assets",
+            "to": "assets"
+        }],
+        "publish": [{
+            "provider": "github",
+            "owner": "MandoDB",
+            "repo": "la-station-launcher",
+            "releaseType": "release"
+        }]
+    }
+}

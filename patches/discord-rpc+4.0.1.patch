@@ -1,0 +1,13 @@
+diff --git a/node_modules/discord-rpc/src/client.js b/node_modules/discord-rpc/src/client.js
+index 0ff29da..626d219 100644
+--- a/node_modules/discord-rpc/src/client.js
++++ b/node_modules/discord-rpc/src/client.js
+@@ -97,7 +97,7 @@ class RPCClient extends EventEmitter {
+     }
+     this._connectPromise = new Promise((resolve, reject) => {
+       this.clientId = clientId;
+-      const timeout = setTimeout(() => reject(new Error('RPC_CONNECTION_TIMEOUT')), 10e3);
++      const timeout = setTimeout(() => reject(new Error('RPC_CONNECTION_TIMEOUT')), 25e3);
+       timeout.unref();
+       this.once('connected', () => {
+         clearTimeout(timeout);

@@ -1,0 +1,144 @@
+.container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* ── Badge statut ────────────────────────────────────────────── */
+.badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.badge.ok {
+  background: var(--color-success-glow);
+  border: 1px solid rgba(76, 175, 130, 0.3);
+  color: var(--color-success);
+}
+.badge.ok .dot { background: var(--color-success); }
+
+.badge.update {
+  background: var(--color-warning-glow);
+  border: 1px solid rgba(240, 160, 48, 0.3);
+  color: var(--color-warning);
+}
+.badge.update .dot { background: var(--color-warning); }
+
+.badge.error {
+  background: var(--color-danger-glow);
+  border: 1px solid rgba(224, 80, 80, 0.3);
+  color: var(--color-danger);
+}
+.badge.error .dot { background: var(--color-danger); }
+
+.badge.unknown {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+.badge.unknown .dot { background: var(--color-text-muted); }
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.label {
+  white-space: nowrap;
+}
+
+/* ── Version ─────────────────────────────────────────────────── */
+.versionInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-left: 1px solid var(--color-border);
+  padding-left: 10px;
+}
+
+.versionLabel {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+
+.versionValue {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Refresh ────────────────────────────────────────────────── */
+.refreshBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.refreshBtn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-border);
+}
+
+/* Variante orange quand une MàJ est disponible */
+.refreshBtnUpdate {
+  color: var(--color-warning);
+}
+
+.refreshBtnUpdate:hover {
+  color: var(--color-warning);
+  background: var(--color-warning-glow);
+}
+
+/* ── Barre de progression téléchargement ────────────────────── */
+.downloadProgress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 80px;
+}
+
+.downloadBar {
+  flex: 1;
+  height: 3px;
+  background: var(--color-warning);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.downloadPct {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-warning);
+  min-width: 28px;
+  text-align: right;
+}
+
+/* ── Changelog ──────────────────────────────────────────────── */
+.changelog {
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  cursor: help;
+}

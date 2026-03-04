@@ -1,0 +1,8 @@
+{
+    "version": "1.0.0",
+    "patchedClasses": [
+        "zombie/network/StatePacket.class",
+        "zombie/inventory/types/ContainerID.class"
+    ],
+    "changelog": "Fix NullPointerException dans StatePacket et ContainerID"
+}

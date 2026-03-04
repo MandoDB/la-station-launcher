@@ -1,0 +1,106 @@
+/* ============================================================
+   LA STATION — Design System v3  (Noir / Blanc Néon)
+   ============================================================ */
+
+:root {
+  /* ── Fonds ── */
+  --color-bg-primary:   #000000;
+  --color-bg-secondary: #080808;
+  --color-bg-card:      #0d0d0d;
+  --color-bg-overlay:   rgba(0, 0, 0, 0.90);
+
+  /* ── Accent blanc néon ── */
+  --color-accent:        #ffffff;
+  --color-accent-bright: #ffffff;
+  --color-accent-dim:    #cccccc;
+  --color-accent-deep:   #999999;
+  --color-accent-glow:   rgba(255, 255, 255, 0.06);
+  --color-accent-border: rgba(255, 255, 255, 0.15);
+
+  /* ── Statuts ── */
+  --color-success:      #4ade80;
+  --color-success-glow: rgba(74, 222, 128, 0.12);
+  --color-warning:      #facc15;
+  --color-warning-glow: rgba(250, 204, 21, 0.12);
+  --color-danger:       #f87171;
+  --color-danger-glow:  rgba(248, 113, 113, 0.12);
+
+  /* ── Console ── */
+  --color-log:   #888888;
+  --color-warn:  #facc15;
+  --color-error: #f87171;
+
+  /* ── Texte ── */
+  --color-text-primary:   #f0f0f0;
+  --color-text-secondary: #888888;
+  --color-text-muted:     #333333;
+
+  /* ── Bordures ── */
+  --color-border:        rgba(255, 255, 255, 0.06);
+  --color-border-strong: rgba(255, 255, 255, 0.14);
+
+  /* ── Typo ── */
+  --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Bebas Neue', 'Inter', sans-serif;
+  --font-mono:    'JetBrains Mono', 'Consolas', monospace;
+
+  /* ── Radius ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* ── Ombres ── */
+  --shadow-sm:     0 2px 8px rgba(0, 0, 0, 0.8);
+  --shadow-md:     0 8px 32px rgba(0, 0, 0, 0.9);
+  --shadow-lg:     0 16px 64px rgba(0, 0, 0, 1);
+  --shadow-accent: 0 0 40px rgba(255, 255, 255, 0.04);
+  --shadow-neon:   0 0 16px rgba(255, 255, 255, 0.5), 0 0 40px rgba(255, 255, 255, 0.12);
+
+  /* ── Transitions ── */
+  --transition-fast:   150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow:   500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Reset ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { width: 100%; height: 100%; overflow: hidden; }
+
+body {
+  font-family: var(--font-primary);
+  background: #000000;
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+/* ── Scrollbar blanche minimaliste ─────────────────────────── */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #222; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #444; }
+
+/* ── App wrapper ─────────────────────────────────────────────── */
+.app-wrapper {
+  width: 100vw; height: 100vh;
+  display: flex; flex-direction: column;
+  position: relative; overflow: hidden;
+}
+
+/* Grain de bruit très léger */
+.app-wrapper::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.025; pointer-events: none; z-index: 9999;
+}
+
+/* Vignette noire profonde */
+.app-wrapper::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.85) 100%);
+  pointer-events: none; z-index: 1;
+}
