@@ -1,14 +1,18 @@
 import {
     app,
     BrowserWindow,
+    Tray,
+    nativeImage,
     ipcMain,
     dialog,
     shell,
     nativeTheme,
+    Menu,
 } from 'electron';
-import { config as loadDotenv } from 'dotenv';
-// Charge .env depuis la racine du projet (dev) ou à côté de l'exe (prod)
-loadDotenv({ path: require('path').resolve(__dirname, '..', '.env') });
+// Token injecté au build par Vite (vite.config.ts → define.__GITHUB_TOKEN__)
+// Fallback sur process.env pour les rares cas où la variable ne serait pas injectée
+declare const __GITHUB_TOKEN__: string;
+const GITHUB_TOKEN: string = (typeof __GITHUB_TOKEN__ !== 'undefined' ? __GITHUB_TOKEN__ : '') || process.env.GITHUB_TOKEN || '';
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -18,6 +22,7 @@ import { SessionManager } from './sessionManager';
 import { ConsoleWatcher } from './consoleWatcher';
 import { DiscordManager } from './discordManager';
 import { queryServer, ServerInfo } from './serverQuery';
+import { fetchRemoteMods, applyServerMods, restoreServerMods, resolveActiveMods, ModEntry } from './modManager';
 
 nativeTheme.themeSource = 'dark';
 
@@ -35,6 +40,10 @@ let patchCheckTimer: NodeJS.Timeout | null = null;
 interface AppSettings {
     hasAcceptedGDPR?: boolean;
     discordRpcEnabled?: boolean;
+    debugMode?: boolean;
+    modsEnabled?: boolean;
+    /** IDs des mods serveur explicitement désactivés par l'utilisateur */
+    disabledMods?: string[];
 }
 
 let settingsPath = ''; // initialisé dans initManagers
@@ -60,10 +69,14 @@ function isRpcEnabled(): boolean {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let patchManager: PatchManager | null = null;
 let sessionManager: SessionManager | null = null;
 let consoleWatcher: ConsoleWatcher | null = null;
 let discordManager: DiscordManager | null = null;
+
+// Chemin du backup mods (initialisé dans initManagers)
+let modsBackupPath = '';
 
 // Dernier résultat connu de la query serveur
 let lastServerInfo: ServerInfo = { online: false, players: 0, maxPlayers: 0 };
@@ -73,12 +86,21 @@ let serverPollTimer: NodeJS.Timeout | null = null;
 let currentPresenceState: import('./discordManager').PresenceState = 'idle';
 let currentPresenceTs: number | undefined = undefined;
 
+// Icône fenêtre/tray : Windows → .ico, Linux/macOS → .png si présent, sinon .ico
+function getAppIconPath(): string {
+    const assetsDir = join(__dirname, '../assets');
+    if (process.platform === 'win32') return join(assetsDir, 'icon.ico');
+    const png = join(assetsDir, 'icon.png');
+    return existsSync(png) ? png : join(assetsDir, 'icon.ico');
+}
+
 function createWindow(): void {
+    const iconPath = getAppIconPath();
     mainWindow = new BrowserWindow({
         width: 1280, height: 760, minWidth: 1000, minHeight: 620,
         frame: false, transparent: false, backgroundColor: '#000000',
         resizable: true, title: 'LA STATION Launcher',
-        icon: join(__dirname, '../assets/icon.ico'),
+        icon: iconPath,
         webPreferences: {
             preload: join(__dirname, 'preload.js'),
             contextIsolation: true, nodeIntegration: false, sandbox: false,
@@ -93,13 +115,36 @@ function createWindow(): void {
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url); return { action: 'deny' };
     });
-    mainWindow.on('closed', () => { mainWindow = null; });
+    mainWindow.on('closed', () => {
+        if (tray) {
+            tray.destroy();
+            tray = null;
+        }
+        mainWindow = null;
+    });
+
+    // Tray (icône en bas à droite) : réduire = masquer dans le tray
+    const trayIcon = nativeImage.createFromPath(iconPath);
+    if (!trayIcon.isEmpty()) {
+        tray = new Tray(trayIcon);
+        tray.setToolTip('LA STATION Launcher');
+        tray.on('click', () => {
+            mainWindow?.show();
+            mainWindow?.focus();
+        });
+        tray.setContextMenu(Menu.buildFromTemplate([
+            { label: 'Ouvrir LA STATION', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+            { type: 'separator' },
+            { label: 'Quitter', click: () => app.quit() },
+        ]));
+    }
 
     // Démarrer la connexion Discord + polling patch après chargement
     // + vérifier session.lock (crash au lancement précédent)
     mainWindow.webContents.once('did-finish-load', () => {
         if (isRpcEnabled()) setTimeout(() => discordManager?.connect(), 2000);
         startPatchPolling();
+        checkOrphanMods();
         checkOrphanSession();
     });
 }
@@ -174,6 +219,15 @@ function setDiscordPresence(
     discordManager?.setPresence(state, ts, pc);
 }
 
+// ── Restauration automatique des mods au démarrage ────────────────────────────
+function checkOrphanMods(): void {
+    if (!modsBackupPath) return;
+    try {
+        restoreServerMods(modsBackupPath);
+        mainWindow?.webContents.send('log:entry', '[Démarrage] Mods orphelins restaurés (crash précédent détecté).');
+    } catch { /* ignore si pas de backup */ }
+}
+
 // ── Restauration automatique au démarrage (session.lock orphelin) ─────────────
 async function checkOrphanSession(): Promise<void> {
     if (!patchManager) return;
@@ -184,8 +238,9 @@ async function checkOrphanSession(): Promise<void> {
     const age = Math.round((Date.now() - timestamp) / 1000 / 60); // en minutes
     console.log(`[Main] session.lock détecté (${age} min) → gamePath: ${gamePath}`);
 
-    // Notifier le renderer qu'une restauration est en cours
-    mainWindow?.webContents.send('session:update', { status: 'restoring' });
+    // Log uniquement — on n'envoie PAS session:update { status: 'restoring' } ici car
+    // cela ferait clignoter/masquer le versionBadge et le bouton JAR dans le renderer
+    // (arrivé avant que React ait fini son init). On utilise uniquement session:auto-restore-done.
     mainWindow?.webContents.send('log:entry', `[Démarrage] Session orpheline détectée (crash il y a ~${age} min). Restauration en cours...`);
 
     if (existsSync(gamePath)) {
@@ -205,8 +260,8 @@ async function checkOrphanSession(): Promise<void> {
         mainWindow?.webContents.send('session:auto-restore-done', { success: true });
     }
 
-    // Revenir à idle après la restauration
-    mainWindow?.webContents.send('session:update', { status: 'idle' });
+    // Pas besoin de renvoyer session:update { status: 'idle' } : le sessionStatus
+    // est déjà 'idle' au démarrage (état initial du renderer).
 }
 
 function initManagers(): void {
@@ -214,7 +269,8 @@ function initManagers(): void {
     if (!existsSync(appDataPath)) mkdirSync(appDataPath, { recursive: true });
     settingsPath = join(appDataPath, 'settings.json');
 
-    patchManager = new PatchManager(appDataPath, (event, data) => mainWindow?.webContents.send(event, data));
+    modsBackupPath = join(appDataPath, 'mods.backup.json');
+    patchManager = new PatchManager(appDataPath, (event, data) => mainWindow?.webContents.send(event, data), GITHUB_TOKEN);
     discordManager = new DiscordManager((event, data) => mainWindow?.webContents.send(event, data));
 
     // Session : envoyer au renderer ET mettre à jour la présence Discord côté main
@@ -235,6 +291,13 @@ function initManagers(): void {
             } else if (status === 'idle' || status === 'done') {
                 stopServerPolling();
                 setDiscordPresence('idle');
+                // Restaurer les mods dès que le jeu se ferme (done) ou que la session revient à idle
+                try {
+                    restoreServerMods(modsBackupPath);
+                    mainWindow?.webContents.send('log:entry', '[Mods] Mods restaurés à leur état d\'origine.');
+                } catch (e: any) {
+                    mainWindow?.webContents.send('log:entry', `[Mods] Erreur restauration mods : ${e.message}`);
+                }
             } else if (status === 'patching' || status === 'launching' || status === 'restoring') {
                 setDiscordPresence('patching');
             }
@@ -246,15 +309,18 @@ function initManagers(): void {
     consoleWatcher = new ConsoleWatcher((event, data) => {
         mainWindow?.webContents.send(event, data);
         if (event === 'console:server-connecting') setDiscordPresence('connecting', data?.startTime ?? Date.now());
-        if (event === 'console:server-connected')   setDiscordPresence('playing',    data?.startTime ?? Date.now());
-        if (event === 'console:server-disconnected') setDiscordPresence('lobby',     data?.startTime ?? Date.now());
+        if (event === 'console:server-connected') setDiscordPresence('playing', data?.startTime ?? Date.now());
+        if (event === 'console:server-disconnected') setDiscordPresence('lobby', data?.startTime ?? Date.now());
     });
 
     consoleWatcher.locate();
 }
 
 // ── Fenêtre ──────────────────────────────────────────────────────────────────
+// Réduire = fenêtre dans la barre des tâches
 ipcMain.on('window:minimize', () => mainWindow?.minimize());
+// Réduire dans la barre système = masquer dans le tray (icône en bas à droite)
+ipcMain.on('window:minimize-to-tray', () => mainWindow?.hide());
 ipcMain.on('window:maximize', () => mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize());
 
 // Fermeture : si une session est active, demander confirmation au renderer.
@@ -289,17 +355,94 @@ ipcMain.handle('game:select-folder', async () => {
     return r.canceled ? null : r.filePaths[0] ?? null;
 });
 
+// ── RAM (ProjectZomboid64.json) ────────────────────────────────────────────────
+const PZ_JSON_FILENAME = 'ProjectZomboid64.json';
+
+function getPzJsonPath(gamePath: string): string {
+    return join(gamePath, PZ_JSON_FILENAME);
+}
+
+/** Lit le -Xmx courant en Mo depuis ProjectZomboid64.json. Retourne null si illisible. */
+function readPzRamMb(gamePath: string): number | null {
+    try {
+        const p = getPzJsonPath(gamePath);
+        if (!existsSync(p)) return null;
+        const json = JSON.parse(readFileSync(p, 'utf8'));
+        const vmArgs: string[] = json.vmArgs ?? [];
+        const xmx = vmArgs.find((a: string) => /^-Xmx\d+[mMgG]$/.test(a));
+        if (!xmx) return null;
+        const match = xmx.match(/^-Xmx(\d+)([mMgG])$/);
+        if (!match) return null;
+        const value = parseInt(match[1], 10);
+        const unit = match[2].toLowerCase();
+        return unit === 'g' ? value * 1024 : value;
+    } catch { return null; }
+}
+
+/** Écrit la valeur -Xmx en Mo dans ProjectZomboid64.json. */
+function writePzRamMb(gamePath: string, mb: number): { success: boolean; error?: string } {
+    try {
+        const p = getPzJsonPath(gamePath);
+        if (!existsSync(p)) return { success: false, error: `${PZ_JSON_FILENAME} introuvable dans ${gamePath}` };
+        const json = JSON.parse(readFileSync(p, 'utf8'));
+        const vmArgs: string[] = json.vmArgs ?? [];
+        const idx = vmArgs.findIndex((a: string) => /^-Xmx/.test(a));
+        const newArg = mb % 1024 === 0 ? `-Xmx${mb / 1024}g` : `-Xmx${mb}m`;
+        if (idx >= 0) vmArgs[idx] = newArg;
+        else vmArgs.push(newArg);
+        json.vmArgs = vmArgs;
+        writeFileSync(p, JSON.stringify(json, null, '\t'), 'utf8');
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+ipcMain.handle('ram:get', (_e, gamePath: string) => readPzRamMb(gamePath));
+ipcMain.handle('ram:set', (_e, gamePath: string, mb: number) => writePzRamMb(gamePath, mb));
+
 // ── Patch ─────────────────────────────────────────────────────────────────────
 ipcMain.handle('patch:check', async () => patchManager!.checkForUpdates());
 ipcMain.handle('patch:apply', async (_e, p: string) => patchManager!.applyPatch(p));
 ipcMain.handle('patch:restore', async (_e, p: string) => patchManager!.restoreBackup(p));
 ipcMain.handle('patch:get-local-version', async () => patchManager!.getLocalVersion());
 ipcMain.handle('patch:download-update', async () => patchManager!.downloadUpdate());
+ipcMain.handle('patch:restore-origin-backup', async (_e, gamePath: string) => {
+    const status = sessionManager?.getStatus().status;
+    if (status === 'patching' || status === 'launching' || status === 'running' || status === 'restoring') {
+        return { success: false, error: 'Impossible pendant une session de jeu. Fermez le jeu et réessayez.' };
+    }
+    return patchManager!.restoreFromOriginBackup(gamePath);
+});
 
 // ── Session ───────────────────────────────────────────────────────────────────
 ipcMain.handle('session:start', async (_e, p: string) => {
     setDiscordPresence('patching');
-    const result = await sessionManager!.startSession(p, patchManager!);
+    const settings = loadSettings();
+    const debugMode = settings.debugMode === true;
+
+    // Mods serveur (activé par défaut)
+    if (settings.modsEnabled !== false) {
+        const fetched = await fetchRemoteMods(GITHUB_TOKEN);
+        if (fetched && fetched.length > 0) {
+            const disabledMods = settings.disabledMods ?? [];
+            const toActivate = resolveActiveMods(fetched, disabledMods);
+            try {
+                applyServerMods(toActivate, modsBackupPath);
+                const skipped = fetched.length - toActivate.length;
+                const msg = skipped > 0
+                    ? `[Mods] ${toActivate.length} mod(s) activé(s), ${skipped} ignoré(s) (désactivés ou dépendance manquante).`
+                    : `[Mods] ${toActivate.length} mod(s) serveur activé(s) dans default.txt.`;
+                mainWindow?.webContents.send('log:entry', msg);
+            } catch (e: any) {
+                mainWindow?.webContents.send('log:entry', `[Mods] Erreur activation mods : ${e.message}`);
+            }
+        } else {
+            mainWindow?.webContents.send('log:entry', '[Mods] Aucun mod serveur à activer (mods.json indisponible ou vide).');
+        }
+    }
+
+    const result = await sessionManager!.startSession(p, patchManager!, debugMode);
     return result;
 });
 ipcMain.handle('session:status', () => sessionManager!.getStatus());
@@ -338,6 +481,11 @@ ipcMain.handle('server:query', async () => {
     return info;
 });
 
+// ── Mods serveur ──────────────────────────────────────────────────────────────
+ipcMain.handle('mods:list', async () => {
+    return fetchRemoteMods(GITHUB_TOKEN);
+});
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 ipcMain.handle('settings:get', () => loadSettings());
 ipcMain.handle('settings:set', async (_e, patch: Partial<AppSettings>) => {
@@ -371,6 +519,11 @@ function initAutoUpdater(): void {
 
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+
+    // Token injecté au build → évite le rate limit anonyme (60 req/h → 5000 req/h)
+    if (GITHUB_TOKEN) {
+        autoUpdater.addAuthHeader(`Bearer ${GITHUB_TOKEN}`);
+    }
 
     autoUpdater.on('update-downloaded', (info) => {
         launcherUpdateReady = true;
@@ -409,7 +562,14 @@ app.on('before-quit', async (event) => {
             if (s.gamePath) await patchManager!.restoreBackup(s.gamePath);
             patchManager!.deleteLock();
         } catch (e) { console.error('[Main] Restore failed on quit:', e); }
-        finally { app.exit(0); }
+        finally {
+            // Toujours restaurer les mods avant de quitter
+            try { restoreServerMods(modsBackupPath); } catch { /* ignore */ }
+            app.exit(0);
+        }
+    } else {
+        // Pas de session active mais peut-être un backup mods résiduel (crash précédent)
+        try { restoreServerMods(modsBackupPath); } catch { /* ignore */ }
     }
 });
 

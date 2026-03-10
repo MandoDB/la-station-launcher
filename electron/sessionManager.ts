@@ -1,9 +1,9 @@
-import { exec, execFile } from 'child_process';
+import { exec } from 'child_process';
 import { promisify } from 'util';
+import { shell } from 'electron';
 import { PatchManager } from './patchManager';
 
 const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 export type SessionStatus =
@@ -24,8 +24,8 @@ export interface SessionState {
 
 export type SessionEventCallback = (event: string, data: any) => void;
 
-// ─── Constantes ─────────────────────────────────────────────────────────────
-const PZ_PROCESS_NAME = 'ProjectZomboid64.exe';
+// ─── Constantes (cross‑platform) ─────────────────────────────────────────────
+const PZ_PROCESS_NAME = process.platform === 'win32' ? 'ProjectZomboid64.exe' : 'ProjectZomboid64';
 const PZ_STEAM_URI = 'steam://rungameid/108600';
 const LAUNCH_TIMEOUT_MS = 60_000;   // 60 secondes pour démarrer
 const POLL_INTERVAL_MS = 2_000;     // Vérification toutes les 2 secondes
@@ -44,34 +44,44 @@ export class SessionManager {
         this.sendToRenderer = sendToRenderer;
     }
 
-    // ── Vérification si le processus PZ est actif ─────────────────────────────
+    // ── Vérification si le processus PZ est actif (cross‑platform) ─────────────
     private async isPZRunning(): Promise<boolean> {
         try {
-            const { stdout } = await execAsync(
-                `tasklist /FI "IMAGENAME eq ${PZ_PROCESS_NAME}" /FO CSV /NH`
-            );
-            return stdout.toLowerCase().includes(PZ_PROCESS_NAME.toLowerCase());
+            if (process.platform === 'win32') {
+                const { stdout } = await execAsync(
+                    `tasklist /FI "IMAGENAME eq ${PZ_PROCESS_NAME}" /FO CSV /NH`
+                );
+                return stdout.toLowerCase().includes(PZ_PROCESS_NAME.toLowerCase());
+            }
+            const { stdout } = await execAsync(`pgrep -f "${PZ_PROCESS_NAME}"`);
+            return stdout.trim().length > 0;
         } catch {
             return false;
         }
     }
 
-    // ── Fermeture forcée de PZ ────────────────────────────────────────────────
+    // ── Fermeture forcée de PZ (cross‑platform) ────────────────────────────────
     async killPZ(): Promise<void> {
         try {
-            await execAsync(`taskkill /IM "${PZ_PROCESS_NAME}" /F`);
+            if (process.platform === 'win32') {
+                await execAsync(`taskkill /IM "${PZ_PROCESS_NAME}" /F`);
+            } else {
+                await execAsync(`pkill -f "${PZ_PROCESS_NAME}"`);
+            }
             this.log('Project Zomboid terminé de force.');
         } catch {
             // Processus déjà fermé ou introuvable — pas d'erreur bloquante
         }
     }
 
-    // ── Lancement de PZ via Steam ─────────────────────────────────────────────
-    private async launchPZ(): Promise<void> {
-        this.log('Lancement de Project Zomboid via Steam...');
+    // ── Lancement de PZ via Steam (cross‑platform : shell.openExternal) ────────
+    private async launchPZ(debugMode = false): Promise<void> {
+        const uri = debugMode
+            ? 'steam://run/108600//-debug/'
+            : PZ_STEAM_URI;
+        this.log(`Lancement de Project Zomboid via Steam${debugMode ? ' [DEBUG]' : ''}...`);
         try {
-            // Sur Windows, on utilise start "" pour lancer l'URI Steam
-            await execAsync(`start "" "${PZ_STEAM_URI}"`);
+            await shell.openExternal(uri);
         } catch (err: any) {
             throw new Error(`Impossible de lancer Steam: ${err.message}`);
         }
@@ -155,7 +165,8 @@ export class SessionManager {
     // ── Démarrage d'une session complète ─────────────────────────────────────
     async startSession(
         gamePath: string,
-        patchManager: PatchManager
+        patchManager: PatchManager,
+        debugMode = false
     ): Promise<{ success: boolean; error?: string }> {
         if (this.state.status !== 'idle' && this.state.status !== 'done') {
             return { success: false, error: 'Une session est déjà en cours' };
@@ -180,7 +191,7 @@ export class SessionManager {
             // Étape 3: Lancer PZ
             this.setState({ status: 'launching' });
             this.sendToRenderer('session:update', { status: 'launching' });
-            await this.launchPZ();
+            await this.launchPZ(debugMode);
 
             // Étape 4: Attendre que le processus démarre
             const started = await this.waitForProcessStart();

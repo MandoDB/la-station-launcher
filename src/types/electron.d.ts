@@ -9,6 +9,7 @@ export interface PatchFile {
 export interface VersionInfo {
     version: string;
     pzVersion?: string;
+    backupJar?: string;
     files: PatchFile[];
     changelog?: string;
 }
@@ -27,7 +28,7 @@ export interface DetectionResult {
 }
 
 export interface PatchProgressData {
-    step: 'check' | 'download' | 'inject' | 'ready';
+    step: 'check' | 'download' | 'inject' | 'ready' | 'origin-backup';
     progress: number;
 }
 
@@ -58,6 +59,13 @@ export interface ConsoleLine {
     raw: string;
 }
 
+// ─── Mods ─────────────────────────────────────────────────────────────────────
+export interface ModEntry {
+    id: string;
+    name: string;
+    require?: string | null;
+}
+
 // ─── Serveur PZ ───────────────────────────────────────────────────────────────
 export interface ServerInfo {
     online: boolean;
@@ -83,6 +91,7 @@ declare global {
         electronAPI: {
             // Fenêtre
             minimizeWindow: () => void;
+            minimizeToTray: () => void;
             maximizeWindow: () => void;
             closeWindow: () => void;
             closeWindowConfirmed: () => void;
@@ -92,6 +101,8 @@ declare global {
             // Jeu
             detectGame: () => Promise<DetectionResult>;
             selectGameFolder: () => Promise<string | null>;
+            ramGet: (gamePath: string) => Promise<number | null>;
+            ramSet: (gamePath: string, mb: number) => Promise<{ success: boolean; error?: string }>;
 
             // Patch
             checkPatch: () => Promise<PatchCheckResult>;
@@ -99,6 +110,7 @@ declare global {
             restorePatch: (gamePath: string) => Promise<{ success: boolean; error?: string }>;
             getLocalVersion: () => Promise<VersionInfo | null>;
             downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
+            restoreOriginBackup: (gamePath: string) => Promise<{ success: boolean; error?: string }>;
 
             // Session
             startSession: (gamePath: string) => Promise<{ success: boolean; error?: string }>;
@@ -118,14 +130,17 @@ declare global {
             // Serveur PZ
             serverQuery: () => Promise<ServerInfo>;
 
+            // Mods serveur
+            modsList: () => Promise<ModEntry[] | null>;
+
             // Discord IPC
             discordGetUser: () => Promise<DiscordUser | null>;
             discordIsReady: () => Promise<boolean>;
             discordSetPresence: (state: 'idle' | 'patching' | 'playing', startTimestamp?: number) => Promise<void>;
 
             // Settings
-            settingsGet: () => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean }>;
-            settingsSet: (patch: { discordRpcEnabled?: boolean }) => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean }>;
+            settingsGet: () => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[] }>;
+            settingsSet: (patch: { discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[] }) => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[] }>;
 
             // Utilitaires
             openExternal: (url: string) => void;

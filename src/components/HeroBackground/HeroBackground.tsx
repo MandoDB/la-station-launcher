@@ -9,7 +9,7 @@ import styles from './HeroBackground.module.css';
  */
 export const HeroBackground: React.FC = () => {
     return (
-        <div className={styles.bg} aria-hidden="true">
+        <div aria-hidden="true">
             {/* Couche de brume */}
             <div className={styles.fog1} />
             <div className={styles.fog2} />

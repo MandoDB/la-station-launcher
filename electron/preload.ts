@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
   // ── Fenêtre ────────────────────────────────────────────────────────────────
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
+  minimizeToTray: () => ipcRenderer.send('window:minimize-to-tray'),
   maximizeWindow: () => ipcRenderer.send('window:maximize'),
   closeWindow: () => ipcRenderer.send('window:close'),
   closeWindowConfirmed: () => ipcRenderer.send('window:close-confirmed'),
@@ -12,6 +13,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Jeu ───────────────────────────────────────────────────────────────────
   detectGame: () => ipcRenderer.invoke('game:detect'),
   selectGameFolder: () => ipcRenderer.invoke('game:select-folder'),
+  ramGet: (gamePath: string) => ipcRenderer.invoke('ram:get', gamePath),
+  ramSet: (gamePath: string, mb: number) => ipcRenderer.invoke('ram:set', gamePath, mb),
 
   // ── Patch ─────────────────────────────────────────────────────────────────
   checkPatch: () => ipcRenderer.invoke('patch:check'),
@@ -19,6 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restorePatch: (p: string) => ipcRenderer.invoke('patch:restore', p),
   getLocalVersion: () => ipcRenderer.invoke('patch:get-local-version'),
   downloadUpdate: () => ipcRenderer.invoke('patch:download-update'),
+  restoreOriginBackup: (gamePath: string) => ipcRenderer.invoke('patch:restore-origin-backup', gamePath),
 
   // ── Session ───────────────────────────────────────────────────────────────
   startSession: (p: string) => ipcRenderer.invoke('session:start', p),
@@ -41,6 +45,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Settings ─────────────────────────────────────────────────────────────
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch: Record<string, unknown>) => ipcRenderer.invoke('settings:set', patch),
+
+  // ── Mods serveur ─────────────────────────────────────────────────────────
+  modsList: () => ipcRenderer.invoke('mods:list'),
 
   // ── Updater ───────────────────────────────────────────────────────────────
   updaterQuitAndInstall: () => ipcRenderer.invoke('updater:quit-and-install'),

@@ -39,76 +39,127 @@ const App: React.FC = () => {
         <LauncherProvider>
             <div className="app-wrapper">
                 <TitleBar onOpenSettings={() => setShowSettings(true)} />
-                <MainPage />
+                <MainPage updatePending={!!launcherUpdate} />
                 <ToastContainer />
 
-                {/* ── Bannière mise à jour launcher ── */}
+                {/* ── Modale mise à jour launcher (bloquante) ── */}
                 <AnimatePresence>
                     {launcherUpdate && (
-                        <motion.div
-                            key="launcher-update"
-                            initial={{ y: 60, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            exit={{ y: 60, opacity: 0 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-                            style={{
-                                position: 'fixed',
-                                bottom: 16,
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                zIndex: 8000,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 14,
-                                padding: '10px 20px',
-                                background: '#18181b',
-                                border: '1px solid rgba(255,255,255,0.12)',
-                                borderRadius: 10,
-                                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-                                fontSize: 13,
-                                color: 'rgba(255,255,255,0.85)',
-                                whiteSpace: 'nowrap',
-                            }}
-                        >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8" width="18" height="18">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M16 10l-4-4-4 4M12 6v10"/>
-                            </svg>
-                            <span>
-                                Mise à jour du launcher disponible
-                                {launcherUpdate.version ? ` (v${launcherUpdate.version})` : ''}
-                            </span>
-                            <motion.button
-                                onClick={handleInstall}
-                                disabled={installing}
-                                whileHover={!installing ? { scale: 1.04 } : {}}
-                                whileTap={!installing ? { scale: 0.97 } : {}}
+                        <>
+                            {/* Fond flouté */}
+                            <motion.div
+                                key="update-backdrop"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
                                 style={{
-                                    padding: '6px 14px',
-                                    borderRadius: 6,
-                                    border: 'none',
-                                    background: installing ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.12)',
-                                    color: installing ? 'rgba(255,255,255,0.35)' : '#fff',
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    cursor: installing ? 'default' : 'pointer',
-                                    letterSpacing: '0.04em',
+                                    position: 'fixed', inset: 0,
+                                    background: 'rgba(0,0,0,0.72)',
+                                    backdropFilter: 'blur(6px)',
+                                    zIndex: 8000,
+                                }}
+                            />
+                            {/* Boîte centrale */}
+                            <motion.div
+                                key="update-modal"
+                                initial={{ opacity: 0, scale: 0.88, y: 12 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.88, y: 12 }}
+                                transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                                style={{
+                                    position: 'fixed',
+                                    inset: 0,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    zIndex: 8001,
+                                    pointerEvents: 'none',
                                 }}
                             >
-                                {installing ? 'Installation...' : 'Installer et relancer'}
-                            </motion.button>
-                            {!installing && (
-                                <motion.button
-                                    onClick={() => setLauncherUpdate(null)}
-                                    whileHover={{ opacity: 0.7 }}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', padding: 4 }}
-                                    title="Ignorer"
-                                >
-                                    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.5">
-                                        <line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/>
-                                    </svg>
-                                </motion.button>
-                            )}
-                        </motion.div>
+                                <div style={{
+                                    pointerEvents: 'all',
+                                    width: 380,
+                                    background: '#0d0d0d',
+                                    border: '1px solid rgba(245,158,11,0.3)',
+                                    borderRadius: 12,
+                                    boxShadow: '0 0 0 1px rgba(245,158,11,0.08), 0 32px 64px rgba(0,0,0,0.9)',
+                                    padding: '28px 28px 24px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: 0,
+                                    textAlign: 'center',
+                                }}>
+                                    {/* Icône */}
+                                    <div style={{
+                                        width: 48, height: 48, borderRadius: '50%',
+                                        background: 'rgba(245,158,11,0.1)',
+                                        border: '1px solid rgba(245,158,11,0.25)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        marginBottom: 16,
+                                    }}>
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8" width="22" height="22">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M16 10l-4-4-4 4M12 6v10"/>
+                                        </svg>
+                                    </div>
+
+                                    {/* Titre */}
+                                    <p style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 6, letterSpacing: '0.02em' }}>
+                                        Mise à jour disponible
+                                    </p>
+
+                                    {/* Sous-titre */}
+                                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 20, lineHeight: 1.5 }}>
+                                        {launcherUpdate.version
+                                            ? <>La version <strong style={{ color: 'rgba(255,255,255,0.7)' }}>v{launcherUpdate.version}</strong> du launcher est prête à être installée.</>
+                                            : 'Une nouvelle version du launcher est prête à être installée.'
+                                        }
+                                        <br />
+                                        Le jeu ne peut pas être lancé avant la mise à jour.
+                                    </p>
+
+                                    {/* Bouton */}
+                                    <motion.button
+                                        onClick={handleInstall}
+                                        disabled={installing}
+                                        whileHover={!installing ? { scale: 1.03, backgroundColor: 'rgba(245,158,11,0.22)' } : {}}
+                                        whileTap={!installing ? { scale: 0.97 } : {}}
+                                        style={{
+                                            width: '100%',
+                                            padding: '11px 0',
+                                            borderRadius: 8,
+                                            border: '1px solid rgba(245,158,11,0.4)',
+                                            background: installing ? 'rgba(255,255,255,0.04)' : 'rgba(245,158,11,0.12)',
+                                            color: installing ? 'rgba(255,255,255,0.3)' : '#f59e0b',
+                                            fontSize: 13,
+                                            fontWeight: 700,
+                                            cursor: installing ? 'default' : 'pointer',
+                                            letterSpacing: '0.06em',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: 8,
+                                        }}
+                                    >
+                                        {installing ? (
+                                            <>
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14" style={{ animation: 'spin 1s linear infinite' }}>
+                                                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                                                </svg>
+                                                Installation en cours…
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M16 10l-4-4-4 4M12 6v10"/>
+                                                </svg>
+                                                Installer et relancer
+                                            </>
+                                        )}
+                                    </motion.button>
+                                </div>
+                            </motion.div>
+                        </>
                     )}
                 </AnimatePresence>
 

@@ -21,7 +21,11 @@ const stepLabels: Record<string, string> = {
 };
 
 // ─── Composant principal ──────────────────────────────────────────────────────
-export const PlayButton: React.FC = () => {
+interface PlayButtonProps {
+    updatePending?: boolean;
+}
+
+export const PlayButton: React.FC<PlayButtonProps> = ({ updatePending = false }) => {
     const { state, handlePlay, handleQuitSession } = useLauncher();
     const { sessionStatus, sessionElapsed, patchProgress, gamePath } = state;
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
@@ -33,7 +37,7 @@ export const PlayButton: React.FC = () => {
     const isRestoring = sessionStatus === 'restoring';
     const isError = sessionStatus === 'error';
 
-    const canPlay = !!gamePath && isIdle;
+    const canPlay = !!gamePath && isIdle && !updatePending;
 
     // ── Timer local — 1 tick/s indépendant des événements IPC ───────────────
     const [localElapsed, setLocalElapsed] = useState(0);
@@ -102,7 +106,10 @@ export const PlayButton: React.FC = () => {
 
                             <span className={styles.btnLabel}>JOUER</span>
 
-                            {!gamePath && (
+                            {updatePending && (
+                                <span className={styles.btnSublabel}>Mise à jour requise</span>
+                            )}
+                            {!updatePending && !gamePath && (
                                 <span className={styles.btnSublabel}>Jeu non détecté</span>
                             )}
                         </motion.button>
@@ -132,7 +139,7 @@ export const PlayButton: React.FC = () => {
                         transition={{ duration: 0.4 }}
                     >
                         {/* Étapes visuelles */}
-                        <PatchSteps currentStep={patchProgress?.step ?? 'check'} isLaunching={isLaunching} />
+                        <PatchSteps currentStep={patchProgress?.step === 'origin-backup' ? 'download' : (patchProgress?.step ?? 'check')} isLaunching={isLaunching} />
 
                         {/* Barre de progression */}
                         {patchProgress && (

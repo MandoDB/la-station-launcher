@@ -1,9 +1,9 @@
 .bg {
-  position: absolute;
+  /* position: absolute;
   inset: 0;
   overflow: hidden;
-  z-index: 0;
-  background: #000000;
+  z-index: 0; */
+  /* background: #000000; */
 }
 
 /* ── Lumière centrale très subtile ─────────────────────────── */

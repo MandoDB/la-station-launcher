@@ -1,11 +1,9 @@
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import * as os from 'os';
 
-/**
- * Emplacements Steam standards pour Project Zomboid.
- * On scanne les lettres de lecteur C à M.
- */
-const STEAM_PATHS = [
+/** Emplacements Steam Windows (relatifs à une lettre de lecteur). */
+const STEAM_PATHS_WIN = [
     'Program Files (x86)/Steam/steamapps/common/ProjectZomboid',
     'Program Files/Steam/steamapps/common/ProjectZomboid',
     'SteamLibrary/steamapps/common/ProjectZomboid',
@@ -15,30 +13,69 @@ const STEAM_PATHS = [
 
 const DRIVE_LETTERS = ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'];
 
+/** Racines Steam typiques sous Linux. */
+const STEAM_ROOTS_LINUX = [
+    join(os.homedir(), '.steam', 'steam'),
+    join(os.homedir(), '.local', 'share', 'Steam'),
+];
+
+const PZ_SUBPATH = join('steamapps', 'common', 'ProjectZomboid');
+
 export interface DetectionResult {
     found: boolean;
     path?: string;
     method?: 'auto' | 'manual';
 }
 
+function checkPZAt(fullPath: string): boolean {
+    const jarFile = join(fullPath, 'projectzomboid.jar');
+    return existsSync(fullPath) && existsSync(jarFile);
+}
+
+/** Sous Linux : lit libraryfolders.vdf et retourne les racines Steam. */
+function getSteamLibraryRootsLinux(): string[] {
+    const roots: string[] = [];
+    for (const root of STEAM_ROOTS_LINUX) {
+        if (existsSync(root)) roots.push(root);
+    }
+    const vdfPath = STEAM_ROOTS_LINUX.map(r => join(r, 'steamapps', 'libraryfolders.vdf')).find(existsSync);
+    if (vdfPath) {
+        try {
+            const content = readFileSync(vdfPath, 'utf8');
+            for (const m of content.matchAll(/"path"\s+"([^"]+)"/gi)) {
+                const p = m[1].replace(/\\\\/g, '/');
+                if (p && !roots.includes(p)) roots.push(p);
+            }
+        } catch { /* ignore */ }
+    }
+    return roots;
+}
+
 export class GameDetector {
     /**
-     * Scanne les disques et les emplacements Steam connus.
-     * Retourne le premier chemin valide trouvé.
+     * Scanne les emplacements Steam connus (Windows : lecteurs C–M ; Linux : ~/.steam, libraryfolders).
+     * Retourne le premier chemin Project Zomboid valide trouvé.
      */
     async detect(): Promise<DetectionResult> {
         console.log('[GameDetector] Starting auto-detection...');
 
-        for (const drive of DRIVE_LETTERS) {
-            for (const steamPath of STEAM_PATHS) {
-                const fullPath = join(`${drive}:\\`, steamPath);
-                if (existsSync(fullPath)) {
-                    // Vérification que c'est bien une installation PZ valide
-                    const jarFile = join(fullPath, 'projectzomboid.jar');
-                    if (existsSync(jarFile)) {
+        if (process.platform === 'win32') {
+            for (const drive of DRIVE_LETTERS) {
+                for (const steamPath of STEAM_PATHS_WIN) {
+                    const fullPath = join(`${drive}:\\`, steamPath);
+                    if (checkPZAt(fullPath)) {
                         console.log(`[GameDetector] Found at: ${fullPath}`);
                         return { found: true, path: fullPath, method: 'auto' };
                     }
+                }
+            }
+        } else {
+            const roots = getSteamLibraryRootsLinux();
+            for (const root of roots) {
+                const fullPath = join(root, 'steamapps', 'common', 'ProjectZomboid');
+                if (checkPZAt(fullPath)) {
+                    console.log(`[GameDetector] Found at: ${fullPath}`);
+                    return { found: true, path: fullPath, method: 'auto' };
                 }
             }
         }

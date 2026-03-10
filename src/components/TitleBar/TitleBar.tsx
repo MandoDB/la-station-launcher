@@ -204,10 +204,23 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
                         onClick={() => window.electronAPI.minimizeWindow()}
                         whileHover={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
                         whileTap={{ scale: 0.95 }}
-                        title="Réduire"
+                        title="Réduire (barre des tâches)"
                     >
                         <svg width="12" height="12" viewBox="0 0 12 12">
                             <rect x="1" y="5.5" width="10" height="1" fill="currentColor" />
+                        </svg>
+                    </motion.button>
+
+                    <motion.button
+                        className={styles.controlBtn}
+                        onClick={() => window.electronAPI.minimizeToTray()}
+                        whileHover={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                        whileTap={{ scale: 0.95 }}
+                        title="Réduire dans la barre système"
+                    >
+                        <svg width="12" height="12" viewBox="0 0 12 12">
+                            <rect x="2" y="2" width="8" height="4" rx="0.5" fill="none" stroke="currentColor" strokeWidth="1" />
+                            <path d="M4 7v2.5 M6 7v2.5 M8 7v2.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
                         </svg>
                     </motion.button>
 

@@ -134,6 +134,9 @@ const LauncherContext = createContext<LauncherContextType | null>(null);
 export function LauncherProvider({ children }: { children: React.ReactNode }) {
     const [state, dispatch] = useReducer(reducer, initialState);
     const toastTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
+    // Protège contre le double mount de React StrictMode (dev) qui causerait
+    // un double appel à init() → double SET_LOADING:true → éléments qui clignotent/disparaissent
+    const initDone = useRef(false);
 
     // ── Toast ──────────────────────────────────────────────────────────────────
     const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
@@ -149,6 +152,9 @@ export function LauncherProvider({ children }: { children: React.ReactNode }) {
 
     // ── Initialisation ────────────────────────────────────────────────────────
     useEffect(() => {
+        if (initDone.current) return;
+        initDone.current = true;
+
         async function init() {
             dispatch({ type: 'SET_LOADING', payload: true });
 

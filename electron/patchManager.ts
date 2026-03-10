@@ -1,12 +1,9 @@
 import { existsSync, copyFileSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import * as https from 'https';
 import * as http from 'http';
 import * as fs from 'fs';
-
-const execFileAsync = promisify(execFile);
+import AdmZip from 'adm-zip';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 // L'API GitHub Contents retourne toujours la version fraîche (pas de cache CDN).
@@ -19,10 +16,8 @@ const REMOTE_VERSION_URL =
 // {
 //   "version": "0.0.1",
 //   "pzVersion": "42.14.1",
-//   "files": [
-//     { "name": "StatePacket.class", "path": "zombie/network/packets/actions/StatePacket.class", "url": "https://..." },
-//     ...
-//   ]
+//   "backupJar": "https://github.com/.../projectzomboid-origin.jar",
+//   "files": [ ... ]
 // }
 export interface PatchFile {
     name: string;    // Nom court du fichier ex: "StatePacket.class"
@@ -33,6 +28,8 @@ export interface PatchFile {
 export interface VersionInfo {
     version: string;
     pzVersion?: string;
+    /** URL du JAR original (non patché) pour restauration de secours */
+    backupJar?: string;
     files: PatchFile[];
     changelog?: string;
 }
@@ -53,14 +50,16 @@ export class PatchManager {
     private lockFilePath: string;
     private classDir: string;
     private sendToRenderer: PatchProgressCallback;
+    private githubToken: string;
     private _lastRemote: VersionInfo | null = null;
 
-    constructor(appDataPath: string, sendToRenderer: PatchProgressCallback) {
+    constructor(appDataPath: string, sendToRenderer: PatchProgressCallback, githubToken = '') {
         this.appDataPath = appDataPath;
         this.versionFilePath = join(appDataPath, 'version.json');
         this.lockFilePath = join(appDataPath, 'session.lock');
         this.classDir = join(appDataPath, 'classes');
         this.sendToRenderer = sendToRenderer;
+        this.githubToken = githubToken;
 
         if (!existsSync(this.classDir)) {
             mkdirSync(this.classDir, { recursive: true });
@@ -126,10 +125,9 @@ export class PatchManager {
                 'Pragma': 'no-cache',
                 'User-Agent': 'LA-STATION-Launcher',
             };
-            // Token optionnel pour passer de 60 req/h à 5000 req/h
-            const ghToken = process.env.GITHUB_TOKEN;
-            if (ghToken && url.includes('api.github.com')) {
-                headers['Authorization'] = `Bearer ${ghToken}`;
+            // Token injecté au build pour passer de 60 req/h à 5000 req/h
+            if (this.githubToken && url.includes('api.github.com')) {
+                headers['Authorization'] = `Bearer ${this.githubToken}`;
             }
             const options = { timeout: 10000, headers };
             const req = lib.get(url, options, (res) => {
@@ -292,6 +290,7 @@ export class PatchManager {
     }
 
     // ── Injection dans le JAR ────────────────────────────────────────────────
+    // ── Injection via adm-zip (Node.js pur — aucun jar.exe requis) ───────────
     private async injectIntoJar(gamePath: string, versionInfo: VersionInfo): Promise<void> {
         const jarPath = join(gamePath, 'projectzomboid.jar');
 
@@ -299,12 +298,10 @@ export class PatchManager {
             throw new Error(`projectzomboid.jar introuvable: ${jarPath}`);
         }
 
-        this.log('Injection des .class dans le JAR...');
+        this.log('Injection des .class dans le JAR (adm-zip)...');
         this.sendToRenderer('patch:progress', { step: 'inject', progress: 0 });
 
-        // Recréer l'arborescence dans un dossier tmp
-        const tmpDir = join(this.appDataPath, 'tmp');
-        if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
+        const zip = new AdmZip(jarPath);
 
         for (let i = 0; i < versionInfo.files.length; i++) {
             const patchFile = versionInfo.files[i];
@@ -315,63 +312,30 @@ export class PatchManager {
                 throw new Error(`Fichier patch introuvable: ${srcFile} — Re-téléchargement nécessaire`);
             }
 
-            // Recréer la structure zombie/network/packets/actions/
-            const destFile = join(tmpDir, patchFile.path);
-            const destDir = join(tmpDir, patchFile.path.substring(0, patchFile.path.lastIndexOf('/')));
-            if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
-            copyFileSync(srcFile, destFile);
+            const classBytes = fs.readFileSync(srcFile);
+            // Chemin interne au ZIP : "zombie/network/packets/actions/StatePacket.class"
+            const entryName = patchFile.path;
+            const entryDir  = entryName.substring(0, entryName.lastIndexOf('/') + 1);
 
+            // Remplacer l'entrée existante ou l'ajouter si absente
+            const existing = zip.getEntry(entryName);
+            if (existing) {
+                zip.updateFile(entryName, classBytes);
+            } else {
+                zip.addFile(entryName, classBytes, '', 0);
+            }
+
+            this.log(`  [${i + 1}/${versionInfo.files.length}] ${entryName} injecté`);
             this.sendToRenderer('patch:progress', {
                 step: 'inject',
-                progress: Math.round(((i + 1) / versionInfo.files.length) * 50),
+                progress: Math.round(((i + 1) / versionInfo.files.length) * 90),
             });
         }
 
-        // Trouver jar.exe — chercher d'abord dans le JRE bundlé de PZ
-        const jarExecutable = this.findJarExecutable(gamePath);
-        this.log(`Utilisation de jar: ${jarExecutable}`);
-
-        const filePaths = versionInfo.files.map((f) => f.path);
-        try {
-            await execFileAsync(jarExecutable, ['uf', jarPath, ...filePaths], { cwd: tmpDir });
-            this.log('Injection réussie.');
-        } catch (err: any) {
-            this.log(`Erreur jar uf: ${err.message}`);
-            throw new Error(`Échec de l'injection JAR: ${err.message}`);
-        }
-
+        // Écrire le JAR modifié sur disque
+        zip.writeZip(jarPath);
+        this.log('Injection réussie (adm-zip).');
         this.sendToRenderer('patch:progress', { step: 'inject', progress: 100 });
-    }
-
-    // ── Recherche de jar.exe ──────────────────────────────────────────────────
-    private findJarExecutable(gamePath: string): string {
-        // 1. JRE bundlé dans le dossier de PZ (chemin typique B42)
-        const candidates = [
-            join(gamePath, 'jre64', 'bin', 'jar.exe'),
-            join(gamePath, 'jre', 'bin', 'jar.exe'),
-            join(gamePath, 'jre64', 'bin', 'jar'),
-        ];
-        // 2. JAVA_HOME défini
-        if (process.env.JAVA_HOME) {
-            candidates.unshift(join(process.env.JAVA_HOME, 'bin', 'jar.exe'));
-        }
-        // 3. Chemins Java standard
-        candidates.push(
-            'C:\\Program Files\\Java\\jdk-21\\bin\\jar.exe',
-            'C:\\Program Files\\Java\\jre1.8.0_333\\bin\\jar.exe',
-            'C:\\Program Files\\Java\\jre-1.8\\bin\\jar.exe',
-        );
-
-        for (const c of candidates) {
-            if (existsSync(c)) {
-                this.log(`jar.exe trouvé: ${c}`);
-                return c;
-            }
-        }
-
-        // Fallback PATH
-        this.log('jar.exe non trouvé localement — utilisation du PATH système');
-        return 'jar';
     }
 
     // ── Téléchargement seul (sans injection dans le JAR) ─────────────────────
@@ -465,6 +429,42 @@ export class PatchManager {
             return { success: true };
         } catch (err: any) {
             this.log(`Erreur de restauration: ${err.message}`);
+            return { success: false, error: err.message };
+        }
+    }
+
+    /**
+     * Restaure projectzomboid.jar avec le JAR d'origine téléchargé depuis l'URL
+     * indiquée dans version.json (backupJar). Utilisable quand le .bak est absent ou corrompu.
+     */
+    async restoreFromOriginBackup(gamePath: string): Promise<{ success: boolean; error?: string }> {
+        const jarPath = join(gamePath, 'projectzomboid.jar');
+        const tempPath = join(this.appDataPath, 'origin-backup.jar.tmp');
+
+        try {
+            const remote = await this.fetchRemoteVersion();
+            if (!remote?.backupJar || typeof remote.backupJar !== 'string' || !remote.backupJar.startsWith('http')) {
+                return { success: false, error: 'backupJar non configuré dans version.json sur le dépôt.' };
+            }
+
+            this.log(`Téléchargement du JAR d'origine depuis ${remote.backupJar}...`);
+            this.sendToRenderer('patch:progress', { step: 'origin-backup', progress: 0 });
+            await this.downloadFile(remote.backupJar, tempPath);
+            this.sendToRenderer('patch:progress', { step: 'origin-backup', progress: 100 });
+
+            if (!existsSync(tempPath)) {
+                return { success: false, error: 'Téléchargement échoué (fichier temporaire absent).' };
+            }
+
+            this.log('Remplacement de projectzomboid.jar par le JAR d\'origine...');
+            copyFileSync(tempPath, jarPath);
+            try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+
+            this.log('JAR d\'origine restauré avec succès.');
+            return { success: true };
+        } catch (err: any) {
+            this.log(`Erreur restauration JAR d'origine: ${err.message}`);
+            try { if (existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* ignore */ }
             return { success: false, error: err.message };
         }
     }

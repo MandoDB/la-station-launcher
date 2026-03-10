@@ -19,14 +19,18 @@ export interface ConsoleLine {
 
 export type ConsoleEventCallback = (event: string, data: any) => void;
 
-// ─── Localisation du console.txt ─────────────────────────────────────────────
-const CONSOLE_CANDIDATES = [
-    join(os.homedir(), 'Zomboid', 'console.txt'),
-    join('C:\\Users', os.userInfo().username, 'Zomboid', 'console.txt'),
-];
+// ─── Localisation du console.txt (cross‑platform : homedir) ───────────────────
+function getConsoleCandidates(): string[] {
+    const home = os.homedir();
+    const candidates = [join(home, 'Zomboid', 'console.txt')];
+    if (process.platform === 'win32') {
+        candidates.push(join(process.env.USERPROFILE || home, 'Zomboid', 'console.txt'));
+    }
+    return [...new Set(candidates)];
+}
 
 export function findConsoleFile(): string | null {
-    for (const p of CONSOLE_CANDIDATES) {
+    for (const p of getConsoleCandidates()) {
         if (existsSync(p)) return p;
     }
     return null;

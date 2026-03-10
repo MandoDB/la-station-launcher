@@ -104,3 +104,7 @@ body {
   background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.85) 100%);
   pointer-events: none; z-index: 1;
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

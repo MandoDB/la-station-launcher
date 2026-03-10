@@ -10,8 +10,8 @@ import { ConsoleViewer } from '../../components/ConsoleViewer/ConsoleViewer';
 import { ServerInfo } from '../../types/electron';
 import styles from './MainPage.module.css';
 
-const DISCORD_URL = 'https://discord.gg/VOTRE_DISCORD'; // ← Remplacer par ton lien Discord
-const WEBSITE_URL = 'https://votre-site-web.com';      // ← Remplacer par ton lien web
+const DISCORD_URL = 'https://discord.gg/WuYScmW56m'; // ← Remplacer par ton lien Discord
+const WEBSITE_URL = 'https://la-station.org';      // ← Remplacer par ton lien web
 
 // Logo depuis assets/logo.png (fourni par l'utilisateur)
 let logoSrc: string | null = null;
@@ -33,12 +33,19 @@ function renderChangelog(md: string): React.ReactNode {
     });
 }
 
-export const MainPage: React.FC = () => {
+interface MainPageProps {
+    updatePending?: boolean;
+}
+
+export const MainPage: React.FC<MainPageProps> = ({ updatePending = false }) => {
     const { state } = useLauncher();
     const { showOnboarding, isLoading, gamePath, localVersion } = state;
     const [logoError, setLogoError] = useState(false);
     const [showConsole, setShowConsole] = useState(false);
     const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
+    const [originBackupLoading, setOriginBackupLoading] = useState(false);
+    const [originBackupError, setOriginBackupError] = useState<string | null>(null);
+    const [originBackupSuccess, setOriginBackupSuccess] = useState(false);
 
     // Requête initiale + abonnement aux mises à jour du main process
     useEffect(() => {
@@ -46,6 +53,26 @@ export const MainPage: React.FC = () => {
         window.electronAPI.onServerPlayers(setServerInfo);
         return () => { window.electronAPI.removeAllListeners('server:players'); };
     }, []);
+
+    const handleRestoreOriginBackup = async () => {
+        if (!gamePath) return;
+        setOriginBackupLoading(true);
+        setOriginBackupError(null);
+        setOriginBackupSuccess(false);
+        try {
+            const result = await window.electronAPI.restoreOriginBackup(gamePath);
+            if (result.success) {
+                setOriginBackupSuccess(true);
+                setTimeout(() => setOriginBackupSuccess(false), 4000);
+            } else {
+                setOriginBackupError(result.error ?? 'Erreur inconnue');
+            }
+        } catch (e: unknown) {
+            setOriginBackupError(e instanceof Error ? e.message : 'Erreur');
+        } finally {
+            setOriginBackupLoading(false);
+        }
+    };
 
     if (isLoading) {
         return (
@@ -161,8 +188,39 @@ export const MainPage: React.FC = () => {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.4, duration: 0.5 }}
                         >
-                            <PlayButton />
+                            <PlayButton updatePending={updatePending} />
                         </motion.div>
+
+                        {/* Restaurer JAR d'origine — juste sous JOUER */}
+                        {gamePath && (
+                            <motion.div
+                                className={styles.originBackupRow}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.5, duration: 0.4 }}
+                            >
+                                {originBackupError && (
+                                    <p className={styles.originBackupError}>{originBackupError}</p>
+                                )}
+                                <motion.button
+                                    type="button"
+                                    className={`${styles.originBackupBtn} ${originBackupSuccess ? styles.originBackupBtnSuccess : ''}`}
+                                    onClick={handleRestoreOriginBackup}
+                                    disabled={originBackupLoading}
+                                    whileHover={!originBackupLoading ? { scale: 1.02 } : {}}
+                                    whileTap={!originBackupLoading ? { scale: 0.98 } : {}}
+                                    title="Remplacer projectzomboid.jar par le JAR original (version saine depuis le dépôt)"
+                                >
+                                    {originBackupLoading ? (
+                                        <>Téléchargement…</>
+                                    ) : originBackupSuccess ? (
+                                        <>✓ JAR d'origine restauré</>
+                                    ) : (
+                                        <>Restaurer le JAR d'origine</>
+                                    )}
+                                </motion.button>
+                            </motion.div>
+                        )}
                     </div>
 
                     {/* ── Footer ───────────────────────────────────── */}
