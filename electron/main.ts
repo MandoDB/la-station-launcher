@@ -28,7 +28,7 @@ nativeTheme.themeSource = 'dark';
 
 // ─── Config serveur ──────────────────────────────────────────────────────────
 const SERVER_HOST = 'play.la-station.org';
-const SERVER_QUERY_PORT = 16263;
+const SERVER_QUERY_PORT = 16264;
 const SERVER_POLL_INTERVAL_MS = 30_000;
 
 // ─── Config patch auto-check ─────────────────────────────────────────────────

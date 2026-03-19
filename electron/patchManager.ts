@@ -289,6 +289,20 @@ export class PatchManager {
         this.log('Téléchargement terminé.');
     }
 
+    // ── Validation magic bytes JAR/ZIP ────────────────────────────────────────
+    private isValidJar(filePath: string): boolean {
+        try {
+            const buf = Buffer.alloc(4);
+            const fd = fs.openSync(filePath, 'r');
+            fs.readSync(fd, buf, 0, 4, 0);
+            fs.closeSync(fd);
+            // Magic bytes ZIP : PK\x03\x04
+            return buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04;
+        } catch {
+            return false;
+        }
+    }
+
     // ── Injection dans le JAR ────────────────────────────────────────────────
     // ── Injection via adm-zip (Node.js pur — aucun jar.exe requis) ───────────
     private async injectIntoJar(gamePath: string, versionInfo: VersionInfo): Promise<void> {
@@ -296,6 +310,14 @@ export class PatchManager {
 
         if (!existsSync(jarPath)) {
             throw new Error(`projectzomboid.jar introuvable: ${jarPath}`);
+        }
+
+        // Vérifier que le JAR est un ZIP valide avant d'ouvrir avec adm-zip
+        if (!this.isValidJar(jarPath)) {
+            throw new Error(
+                'projectzomboid.jar est corrompu ou invalide (magic bytes ZIP manquants). ' +
+                'Utilisez le bouton "Restaurer le JAR d\'origine" pour le réparer.'
+            );
         }
 
         this.log('Injection des .class dans le JAR (adm-zip)...');
@@ -315,7 +337,7 @@ export class PatchManager {
             const classBytes = fs.readFileSync(srcFile);
             // Chemin interne au ZIP : "zombie/network/packets/actions/StatePacket.class"
             const entryName = patchFile.path;
-            const entryDir  = entryName.substring(0, entryName.lastIndexOf('/') + 1);
+            const entryDir = entryName.substring(0, entryName.lastIndexOf('/') + 1);
 
             // Remplacer l'entrée existante ou l'ajouter si absente
             const existing = zip.getEntry(entryName);
@@ -377,6 +399,16 @@ export class PatchManager {
                 if (!remote) throw new Error('Patch distant inaccessible et aucune version locale');
                 await this.downloadPatchedClasses(remote);
                 versionToApply = remote;
+
+                // Mise à jour de version : forcer le JAR d'origine (backupJar) avant d'injecter
+                const originResult = await this.restoreFromOriginBackupWithRemote(gamePath, remote);
+                if (!originResult.success && originResult.error?.includes('backupJar non configuré')) {
+                    this.log('backupJar non configuré — on continue avec le JAR actuel.');
+                } else if (!originResult.success) {
+                    throw new Error(originResult.error ?? 'Échec restauration JAR d\'origine');
+                } else {
+                    await this.createBackup(gamePath, true);
+                }
             } else {
                 versionToApply = await this.getLocalVersion();
             }
@@ -388,7 +420,9 @@ export class PatchManager {
                 throw new Error(`version.json invalide — "files" vide ou absent (version: ${versionToApply.version})`);
             }
 
-            await this.createBackup(gamePath);
+            if (!checkResult.needsDownload) {
+                await this.createBackup(gamePath);
+            }
             await this.injectIntoJar(gamePath, versionToApply);
 
             this.sendToRenderer('patch:progress', { step: 'ready', progress: 100 });
@@ -400,12 +434,12 @@ export class PatchManager {
     }
 
     // ── Backup ────────────────────────────────────────────────────────────────
-    async createBackup(gamePath: string): Promise<void> {
+    async createBackup(gamePath: string, forceOverwrite = false): Promise<void> {
         const jarPath = join(gamePath, 'projectzomboid.jar');
         const bakPath = join(gamePath, 'projectzomboid.jar.bak');
 
-        if (!existsSync(bakPath)) {
-            this.log('Création du backup du JAR original...');
+        if (forceOverwrite || !existsSync(bakPath)) {
+            this.log(forceOverwrite ? 'Mise à jour du backup (.bak) avec le JAR d\'origine.' : 'Création du backup du JAR original...');
             copyFileSync(jarPath, bakPath);
             this.log('Backup créé: projectzomboid.jar.bak');
         } else {
@@ -434,37 +468,55 @@ export class PatchManager {
     }
 
     /**
+     * Restaure projectzomboid.jar avec le JAR d'origine téléchargé depuis l'URL backupJar
+     * du VersionInfo fourni. Utilisé en interne quand on a déjà le remote (ex: lors d'un update).
+     */
+    private async restoreFromOriginBackupWithRemote(
+        gamePath: string,
+        remote: VersionInfo
+    ): Promise<{ success: boolean; error?: string }> {
+        const jarPath = join(gamePath, 'projectzomboid.jar');
+        const tempPath = join(this.appDataPath, 'origin-backup.jar.tmp');
+
+        if (!remote?.backupJar || typeof remote.backupJar !== 'string' || !remote.backupJar.startsWith('http')) {
+            return { success: false, error: 'backupJar non configuré dans version.json.' };
+        }
+
+        this.log(`Téléchargement du JAR d'origine (backupJar) pour v${remote.version}...`);
+        this.sendToRenderer('patch:progress', { step: 'origin-backup', progress: 0 });
+        await this.downloadFile(remote.backupJar, tempPath);
+        this.sendToRenderer('patch:progress', { step: 'origin-backup', progress: 100 });
+
+        if (!existsSync(tempPath)) {
+            return { success: false, error: 'Téléchargement échoué (fichier temporaire absent).' };
+        }
+
+        if (!this.isValidJar(tempPath)) {
+            try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+            return {
+                success: false,
+                error: `Le fichier téléchargé depuis backupJar n'est pas un JAR valide.`,
+            };
+        }
+
+        this.log('Remplacement de projectzomboid.jar par le JAR d\'origine...');
+        copyFileSync(tempPath, jarPath);
+        try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+        this.log('JAR d\'origine installé.');
+        return { success: true };
+    }
+
+    /**
      * Restaure projectzomboid.jar avec le JAR d'origine téléchargé depuis l'URL
      * indiquée dans version.json (backupJar). Utilisable quand le .bak est absent ou corrompu.
      */
     async restoreFromOriginBackup(gamePath: string): Promise<{ success: boolean; error?: string }> {
-        const jarPath = join(gamePath, 'projectzomboid.jar');
-        const tempPath = join(this.appDataPath, 'origin-backup.jar.tmp');
-
         try {
             const remote = await this.fetchRemoteVersion();
-            if (!remote?.backupJar || typeof remote.backupJar !== 'string' || !remote.backupJar.startsWith('http')) {
-                return { success: false, error: 'backupJar non configuré dans version.json sur le dépôt.' };
-            }
-
-            this.log(`Téléchargement du JAR d'origine depuis ${remote.backupJar}...`);
-            this.sendToRenderer('patch:progress', { step: 'origin-backup', progress: 0 });
-            await this.downloadFile(remote.backupJar, tempPath);
-            this.sendToRenderer('patch:progress', { step: 'origin-backup', progress: 100 });
-
-            if (!existsSync(tempPath)) {
-                return { success: false, error: 'Téléchargement échoué (fichier temporaire absent).' };
-            }
-
-            this.log('Remplacement de projectzomboid.jar par le JAR d\'origine...');
-            copyFileSync(tempPath, jarPath);
-            try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
-
-            this.log('JAR d\'origine restauré avec succès.');
-            return { success: true };
+            if (!remote) return { success: false, error: 'Version distante inaccessible.' };
+            return this.restoreFromOriginBackupWithRemote(gamePath, remote);
         } catch (err: any) {
             this.log(`Erreur restauration JAR d'origine: ${err.message}`);
-            try { if (existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* ignore */ }
             return { success: false, error: err.message };
         }
     }
