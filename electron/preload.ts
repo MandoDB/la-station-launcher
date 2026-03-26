@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkPatch: () => ipcRenderer.invoke('patch:check'),
   applyPatch: (p: string) => ipcRenderer.invoke('patch:apply', p),
   restorePatch: (p: string) => ipcRenderer.invoke('patch:restore', p),
+  restoreOriginBackup: (p: string) => ipcRenderer.invoke('patch:restore-origin', p),
   getLocalVersion: () => ipcRenderer.invoke('patch:get-local-version'),
   downloadUpdate: () => ipcRenderer.invoke('patch:download-update'),
 

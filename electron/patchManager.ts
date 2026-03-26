@@ -29,6 +29,8 @@ export interface VersionInfo {
     pzVersion?: string;
     /** URL du JAR custom à injecter via classpath */
     jarUrl?: string;
+    /** URL du JAR d'origine (backup officiel) */
+    backupJar?: string;
     /** Nom du fichier JAR sur le disque (ex: "la-station.jar") */
     jarName?: string;
     /** Liste des fichiers (utilisé pour compatibilité ou fichiers additionnels) */
@@ -422,7 +424,39 @@ export class PatchManager {
         }
     }
 
-    // ── Restauration ──────────────────────────────────────────────────────────
+    // ── Restauration du JAR d'origine via URL ─────────────────────────────────
+    async restoreOriginBackup(gamePath: string): Promise<{ success: boolean; error?: string }> {
+        try {
+            this.log('Récupération de l\'URL du JAR original...');
+            const remote = await this.fetchRemoteVersion();
+            if (!remote || !remote.backupJar) {
+                throw new Error('URL de backup (backupJar) introuvable dans version.json');
+            }
+
+            const destPath = join(gamePath, 'ProjectZomboid64.jar');
+            this.log(`Téléchargement du JAR d'origine depuis ${remote.backupJar}...`);
+            this.sendToRenderer('patch:progress', { step: 'download', progress: 0 });
+            
+            await this.downloadFile(remote.backupJar, destPath);
+
+            // On en profite pour restaurer aussi le JSON si possible pour nettoyer le classpath
+            const jsonPath = join(gamePath, PZ_JSON_FILENAME);
+            const bakPath = join(gamePath, `${PZ_JSON_FILENAME}.bak`);
+            if (existsSync(bakPath)) {
+                this.log('Nettoyage du fichier de configuration...');
+                copyFileSync(bakPath, jsonPath);
+                fs.unlinkSync(bakPath);
+            }
+
+            this.log('JAR original restauré avec succès.');
+            return { success: true };
+        } catch (err: any) {
+            this.log(`Erreur de restauration JAR: ${err.message}`);
+            return { success: false, error: err.message };
+        }
+    }
+
+    // ── Restauration légère (JSON + nettoyage local) ──────────────────────────
     async restoreBackup(gamePath: string): Promise<{ success: boolean; error?: string }> {
         const jsonPath = join(gamePath, PZ_JSON_FILENAME);
         const bakPath = join(gamePath, `${PZ_JSON_FILENAME}.bak`);

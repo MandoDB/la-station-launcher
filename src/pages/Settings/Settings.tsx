@@ -139,6 +139,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     // Mods
     const [modsList, setModsList]       = useState<ModEntry[]>([]);
     const [modsLoading, setModsLoading] = useState(true);
+    const [restoringJar, setRestoringJar] = useState(false);
 
     // RAM
     const [ramMb, setRamMb]         = useState<number>(3072);
@@ -247,6 +248,24 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     const requiredBy = (id: string): string[] =>
         modsList.filter(m => m.require === id).map(m => m.name);
 
+    const handleRestoreJar = async () => {
+        if (!gamePath || !window.confirm('Voulez-vous vraiment restaurer le fichier JAR original ? Cela annulera le patch actuel.')) return;
+        
+        setRestoringJar(true);
+        try {
+            const resp = await window.electronAPI.restoreOriginBackup(gamePath);
+            if (resp.success) {
+                alert('JAR restauré avec succès. Relancez le launcher pour réinitialiser le statut.');
+            } else {
+                alert(`Erreur: ${resp.error || 'Impossible de restaurer.'}`);
+            }
+        } catch (e: any) {
+            alert(`Erreur lors de la restauration : ${e.message}`);
+        } finally {
+            setRestoringJar(false);
+        }
+    };
+
 
     // ── Rendu des onglets ─────────────────────────────────────────────────────
 
@@ -266,6 +285,24 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             onChange={() => { setDebugMode(v => !v); set({ debugMode: !debugMode }); }}
                             disabled={saving}
                         />
+
+                        <div className={styles.divider} />
+
+                        <div className={styles.settingsRow}>
+                            <div className={styles.toggleInfo}>
+                                <span className={styles.toggleLabel}>Restaurer le JAR original</span>
+                                <span className={styles.toggleDesc}>
+                                    Télécharge et remplace le fichier .jar actuel par la version originale (vanilla) depuis notre dépôt. Utile en cas de corruption ou d'erreur de lancement persistante.
+                                </span>
+                            </div>
+                            <button 
+                                className={styles.secondaryBtn}
+                                onClick={handleRestoreJar}
+                                disabled={restoringJar || !gamePath}
+                            >
+                                {restoringJar ? 'Restauration...' : 'Restaurer'}
+                            </button>
+                        </div>
                     </div>
                 );
 

@@ -474,6 +474,7 @@ ipcMain.handle('ram:set', (_e, gamePath: string, mb: number) => writePzRamMb(gam
 ipcMain.handle('patch:check', async () => patchManager!.checkForUpdates());
 ipcMain.handle('patch:apply', async (_e, p: string) => patchManager!.applyPatch(p));
 ipcMain.handle('patch:restore', async (_e, p: string) => patchManager!.restoreBackup(p));
+ipcMain.handle('patch:restore-origin', async (_e, p: string) => patchManager!.restoreOriginBackup(p));
 ipcMain.handle('patch:get-local-version', async () => patchManager!.getLocalVersion());
 ipcMain.handle('patch:download-update', async () => patchManager!.downloadUpdate());
 
