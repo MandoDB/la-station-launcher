@@ -116,16 +116,22 @@ export class RecorderManager {
     }
 
     public setVideosDir(p: string) {
-        if (!existsSync(p)) {
-            try {
+        try {
+            if (!existsSync(p)) {
                 mkdirSync(p, { recursive: true });
-            } catch (e) {
-                console.error(`[Recorder] Failed to create dir ${p}:`, e);
-                return false;
             }
+            
+            // Check write access
+            const testFile = join(p, `.perm_test_${Date.now()}`);
+            writeFileSync(testFile, 'test');
+            unlinkSync(testFile);
+            
+            this.videosDir = p;
+            return true;
+        } catch (e) {
+            console.error(`[RecorderManager] No write access to ${p}:`, e);
+            return false;
         }
-        this.videosDir = p;
-        return true;
     }
 
     public getVideos(limit: number = 50): RecorderMetadata[] {

@@ -37,9 +37,16 @@ export class ScreenshotManager {
     setDirectory(path: string): boolean {
         try {
             this.ensureDir(path);
+            
+            // Check write access
+            const testFile = join(path, `.perm_test_${Date.now()}`);
+            writeFileSync(testFile, 'test');
+            unlinkSync(testFile);
+            
             this.screenshotsDir = path;
             return true;
-        } catch {
+        } catch (e) {
+            console.error(`[ScreenshotManager] No write access to ${path}:`, e);
             return false;
         }
     }

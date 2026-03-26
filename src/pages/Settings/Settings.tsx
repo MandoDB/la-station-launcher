@@ -124,7 +124,7 @@ const ToggleRow: React.FC<ToggleRowProps> = ({ label, desc, checked, onChange, d
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
-    const { state } = useLauncher();
+    const { state, addToast } = useLauncher();
     const gamePath = state.gamePath;
 
     const [activeTab, setActiveTab] = useState<Category>('jeu');
@@ -455,7 +455,15 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                         const path = await window.electronAPI.selectGameFolder();
                                         if (path) {
                                             const ok = await window.electronAPI.screenshotSetDir(path);
-                                            if (ok) setScreenshotDir(path);
+                                            if (ok) {
+                                                setScreenshotDir(path);
+                                            } else {
+                                                addToast({
+                                                    type: 'error',
+                                                    title: 'Accès refusé',
+                                                    message: 'Le launcher n\'a pas les permissions d\'écriture dans ce dossier. Choisissez un autre emplacement.'
+                                                });
+                                            }
                                         }
                                     }}
                                 >
@@ -649,7 +657,15 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                         const path = await window.electronAPI.selectGameFolder();
                                         if (path) {
                                             const ok = await window.electronAPI.recorderSetDir(path);
-                                            if (ok) setRecorderDir(path);
+                                            if (ok) {
+                                                setRecorderDir(path);
+                                            } else {
+                                                addToast({
+                                                    type: 'error',
+                                                    title: 'Accès refusé',
+                                                    message: 'Le launcher n\'a pas les permissions d\'écriture dans ce dossier (ex: Program Files). Choisissez un autre emplacement.'
+                                                });
+                                            }
                                         }
                                     }}
                                 >

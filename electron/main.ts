@@ -618,7 +618,25 @@ function initAutoUpdater(): void {
 
 ipcMain.handle('updater:is-ready', () => launcherUpdateReady);
 ipcMain.handle('updater:quit-and-install', () => {
-    if (launcherUpdateReady) autoUpdater.quitAndInstall(false, true);
+    if (launcherUpdateReady) {
+        // Préparation du quit immédiat pour l'installer
+        console.log('[Main] Quit and install starting...');
+        
+        // Fermer les fenêtres secondaires pour libérer les ressources/verrous
+        [recordingIndicatorWindow, recordingNotificationWindow, recordingSavedNotificationWindow, notificationWindow, snippetWindow, shareWindow].forEach(w => {
+            if (w && !w.isDestroyed()) w.close();
+        });
+        
+        // Détruire le tray proprement
+        if (tray) {
+            tray.destroy();
+            tray = null;
+        }
+
+        // On laisse le lifecycle avant-quit de l'app (restore patch) se faire
+        // mais on prévient l'installer qu'on arrive.
+        autoUpdater.quitAndInstall(false, true);
+    }
 });
 
 // ── Fermeture propre ──────────────────────────────────────────────────────────
@@ -714,27 +732,35 @@ function registerHotkeys() {
     const snippetKey = s.screenshotSnippetKey || 'F9';
     const recKey = s.recorderKey || 'F8';
 
+    console.log(`[Hotkeys] Registering: Full=${key}, Snippet=${snippetKey}, Rec=${recKey}`);
+
     try {
         globalShortcut.unregisterAll();
         
         // Screenshot plein écran
-        globalShortcut.register(key, () => {
+        const ok1 = globalShortcut.register(key, () => {
+            console.log(`[Hotkeys] ${key} pressed (Full Screenshot)`);
             screenshotManager?.capture();
         });
+        if (!ok1) console.error(`[Hotkeys] Failed to register FULL SCREENSHOT (${key}). Already in use?`);
 
         // Screenshot zone
-        globalShortcut.register(snippetKey, () => {
+        const ok2 = globalShortcut.register(snippetKey, () => {
+            console.log(`[Hotkeys] ${snippetKey} pressed (Snippet)`);
             createSnippetWindow();
         });
+        if (!ok2) console.error(`[Hotkeys] Failed to register SNIPPET (${snippetKey}). Already in use?`);
 
         // Recorder Toggle
-        globalShortcut.register(recKey, () => {
+        const ok3 = globalShortcut.register(recKey, () => {
+            console.log(`[Hotkeys] ${recKey} pressed (Recorder Toggle)`);
             recorderManager?.toggleRecording();
         });
+        if (!ok3) console.error(`[Hotkeys] Failed to register RECORDER (${recKey}). Already in use?`);
 
-        console.log(`[Main] Hotkeys registered: ${key} (Full), ${snippetKey} (Snippet), ${recKey} (Record)`);
+        console.log(`[Hotkeys] Registration done. Status: Full=${ok1}, Snippet=${ok2}, Rec=${ok3}`);
     } catch (e) {
-        console.error('[Main] Failed to register hotkeys:', e);
+        console.error('[Hotkeys] Critical failure during registration:', e);
     }
 }
 
