@@ -30,10 +30,15 @@ export class RecorderManager {
         });
 
         ipcMain.handle('recorder:save', async (_e, arrayBuffer: ArrayBuffer) => {
+            if (!existsSync(this.videosDir)) {
+                mkdirSync(this.videosDir, { recursive: true });
+            }
+
             const timestamp = Date.now();
             const filename = `clip_${timestamp}.webm`;
             const fullPath = join(this.videosDir, filename);
             
+            console.log(`[Recorder] Saving video to: ${fullPath}`);
             const metadata = { path: fullPath, timestamp, filename };
             writeFileSync(fullPath, Buffer.from(arrayBuffer));
             this.onVideoSaved(metadata);
@@ -111,7 +116,14 @@ export class RecorderManager {
     }
 
     public setVideosDir(p: string) {
-        if (!existsSync(p)) return false;
+        if (!existsSync(p)) {
+            try {
+                mkdirSync(p, { recursive: true });
+            } catch (e) {
+                console.error(`[Recorder] Failed to create dir ${p}:`, e);
+                return false;
+            }
+        }
         this.videosDir = p;
         return true;
     }

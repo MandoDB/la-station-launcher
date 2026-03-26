@@ -7,19 +7,18 @@ interface LegalNoticeProps {
     onAccept: () => void;
 }
 
-const LEGAL_STORAGE_KEY = 'launcher_legal_accepted';
-
-export function hasAcceptedLegal(): boolean {
+export async function hasAcceptedLegal(): Promise<boolean> {
     try {
-        return localStorage.getItem(LEGAL_STORAGE_KEY) === '1';
+        const settings = await window.electronAPI.settingsGet();
+        return settings.hasAcceptedGDPR === true;
     } catch {
         return false;
     }
 }
 
-export function setLegalAccepted(): void {
+export async function setLegalAccepted(): Promise<void> {
     try {
-        localStorage.setItem(LEGAL_STORAGE_KEY, '1');
+        await window.electronAPI.settingsSet({ hasAcceptedGDPR: true });
     } catch { /* ignore */ }
 }
 
@@ -28,8 +27,8 @@ export function setLegalAccepted(): void {
  * Affiché sans possibilité de refuser — un seul bouton "J'ai compris".
  */
 export const LegalNotice: React.FC<LegalNoticeProps> = ({ onAccept }) => {
-    const handleAccept = () => {
-        setLegalAccepted();
+    const handleAccept = async () => {
+        await setLegalAccepted();
         onAccept();
     };
 

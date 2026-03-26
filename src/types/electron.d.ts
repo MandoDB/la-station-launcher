@@ -162,6 +162,7 @@ declare global {
                 recorderIndicatorPos?: { x: number, y: number };
                 recorderResolution?: '480p' | '720p' | '1080p' | 'native';
                 recorderFps?: 15 | 30 | 60;
+                hasAcceptedGDPR?: boolean;
             }>;
             settingsSet: (patch: { 
                 discordRpcEnabled?: boolean; 
@@ -177,6 +178,7 @@ declare global {
                 recorderIndicatorPos?: { x: number, y: number };
                 recorderResolution?: '480p' | '720p' | '1080p' | 'native';
                 recorderFps?: 15 | 30 | 60;
+                hasAcceptedGDPR?: boolean;
             }) => Promise<any>;
 
             // Screenshot

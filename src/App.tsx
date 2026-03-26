@@ -15,7 +15,7 @@ import { RecordingIndicator } from './components/RecordingIndicator/RecordingInd
 import { RecordingSavedNotification } from './components/RecordingSavedNotification/RecordingSavedNotification';
 
 const App: React.FC = () => {
-    const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedLegal());
+    const [legalAccepted, setLegalAccepted] = useState(true); // True par défaut pour éviter le flash, on check après
     const [showSettings, setShowSettings] = useState(false);
     const [launcherUpdate, setLauncherUpdate] = useState<{ version: string } | null>(null);
     const [installing, setInstalling] = useState(false);
@@ -58,6 +58,9 @@ const App: React.FC = () => {
         window.electronAPI.onShowScreenshotModal((path) => {
             setAutoScreenshot(path);
         });
+
+        // Vérifier les mentions légales
+        hasAcceptedLegal().then(setLegalAccepted);
 
         return () => {
             window.electronAPI.removeAllListeners('updater:downloaded');

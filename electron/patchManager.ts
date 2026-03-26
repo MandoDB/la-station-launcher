@@ -433,7 +433,7 @@ export class PatchManager {
                 throw new Error('URL de backup (backupJar) introuvable dans version.json');
             }
 
-            const destPath = join(gamePath, 'ProjectZomboid64.jar');
+            const destPath = join(gamePath, 'projectzomboid.jar');
             this.log(`Téléchargement du JAR d'origine depuis ${remote.backupJar}...`);
             this.sendToRenderer('patch:progress', { step: 'download', progress: 0 });
             

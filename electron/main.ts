@@ -342,6 +342,7 @@ function initManagers(): void {
 
     const s = loadSettings();
     if (s.screenshotDir) screenshotManager.setDirectory(s.screenshotDir);
+    if (s.recorderDir) recorderManager.setVideosDir(s.recorderDir);
 
     // Session : envoyer au renderer ET mettre à jour la présence Discord côté main
     let lastSessionStatus: string | null = null;
@@ -852,7 +853,15 @@ function createRecordingIndicatorWindow() {
         },
     });
 
-    recordingIndicatorWindow.setAlwaysOnTop(true, 'screen-saver');
+    recordingIndicatorWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    recordingIndicatorWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    
+    // S'assurer qu'il est dans l'écran visible s'il a été déplacé/oublié
+    const bounds = primaryDisplay.workArea;
+    if (x < bounds.x || x > bounds.x + bounds.width - 70 || 
+        y < bounds.y || y > bounds.y + bounds.height - 32) {
+        recordingIndicatorWindow.setPosition(bounds.x + 20, bounds.y + 20);
+    }
 
     if (process.env.VITE_DEV_SERVER_URL) {
         recordingIndicatorWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#recording-indicator`);
