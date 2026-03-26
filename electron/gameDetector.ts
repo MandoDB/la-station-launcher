@@ -11,7 +11,7 @@ const STEAM_PATHS_WIN = [
     'Games/Steam/steamapps/common/ProjectZomboid',
 ];
 
-const DRIVE_LETTERS = ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'];
+const DRIVE_LETTERS = ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'A', 'B'];
 
 /** Racines Steam typiques sous Linux. */
 const STEAM_ROOTS_LINUX = [

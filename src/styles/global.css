@@ -69,7 +69,7 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
 
 body {
   font-family: var(--font-primary);
-  background: #000000;
+  background: transparent;
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -82,11 +82,23 @@ body {
 ::-webkit-scrollbar-thumb { background: #222; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #444; }
 
-/* ── App wrapper ─────────────────────────────────────────────── */
+/* ── Wrappers ─────────────────────────────────────────────────── */
 .app-wrapper {
   width: 100vw; height: 100vh;
   display: flex; flex-direction: column;
   position: relative; overflow: hidden;
+  background: #000000;
+}
+
+.notification-wrapper, .share-wrapper {
+  width: 100vw; height: 100vh;
+  display: flex !important; align-items: center; justify-content: center;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.share-wrapper {
+  background: transparent !important;
 }
 
 /* Grain de bruit très léger */

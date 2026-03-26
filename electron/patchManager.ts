@@ -3,7 +3,6 @@ import { join } from 'path';
 import * as https from 'https';
 import * as http from 'http';
 import * as fs from 'fs';
-import AdmZip from 'adm-zip';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 // L'API GitHub Contents retourne toujours la version fraîche (pas de cache CDN).
@@ -20,17 +19,20 @@ const REMOTE_VERSION_URL =
 //   "files": [ ... ]
 // }
 export interface PatchFile {
-    name: string;    // Nom court du fichier ex: "StatePacket.class"
-    path: string;    // Chemin interne au JAR ex: "zombie/network/packets/actions/StatePacket.class"
+    name: string;    // Nom court du fichier ex: "la-station.jar"
+    path: string;    // Chemin relatif au dossier du jeu ou au JAR (selon le type)
     url: string;     // URL de téléchargement directe
 }
 
 export interface VersionInfo {
     version: string;
     pzVersion?: string;
-    /** URL du JAR original (non patché) pour restauration de secours */
-    backupJar?: string;
-    files: PatchFile[];
+    /** URL du JAR custom à injecter via classpath */
+    jarUrl?: string;
+    /** Nom du fichier JAR sur le disque (ex: "la-station.jar") */
+    jarName?: string;
+    /** Liste des fichiers (utilisé pour compatibilité ou fichiers additionnels) */
+    files?: PatchFile[];
     changelog?: string;
 }
 
@@ -42,6 +44,9 @@ export interface PatchCheckResult {
 }
 
 export type PatchProgressCallback = (event: string, data: any) => void;
+
+const PZ_JSON_FILENAME = 'ProjectZomboid64.json';
+const CUSTOM_JAR_DEFAULT_NAME = 'la-station.jar';
 
 // ─── PatchManager ─────────────────────────────────────────────────────────────
 export class PatchManager {
@@ -177,15 +182,14 @@ export class PatchManager {
             }
 
             const parsed = JSON.parse(jsonText) as VersionInfo;
-            if (!parsed.version || !Array.isArray(parsed.files) || parsed.files.length === 0) {
-                this.log(`version.json invalide — version="${parsed.version}", files=${JSON.stringify(parsed.files)}`);
+            if (!parsed.version) {
+                this.log(`version.json invalide — version manquante`);
                 return null;
             }
-            for (const f of parsed.files) {
-                if (!f.name || !f.path || !f.url) {
-                    this.log(`Entrée invalide dans files: ${JSON.stringify(f)}`);
-                    return null;
-                }
+            // On accepte soit jarUrl, soit une liste de fichiers
+            if (!parsed.jarUrl && (!Array.isArray(parsed.files) || parsed.files.length === 0)) {
+                this.log(`version.json invalide — ni jarUrl ni files`);
+                return null;
             }
             return parsed;
         } catch (e) {
@@ -265,23 +269,33 @@ export class PatchManager {
     }
 
     // ── Téléchargement de tous les .class ────────────────────────────────────
-    private async downloadPatchedClasses(remoteVersion: VersionInfo): Promise<void> {
-        this.log(`Téléchargement du patch v${remoteVersion.version} (${remoteVersion.files.length} fichier(s))...`);
+    // ── Téléchargement du JAR custom ou des fichiers ─────────────────────────
+    private async downloadPatchFiles(remoteVersion: VersionInfo): Promise<void> {
+        this.log(`Téléchargement du patch v${remoteVersion.version}...`);
         this.sendToRenderer('patch:progress', { step: 'download', progress: 0 });
 
-        for (let i = 0; i < remoteVersion.files.length; i++) {
-            const patchFile = remoteVersion.files[i];
-            // On stocke le .class avec un nom unique (chemin→underscore) pour éviter collisions
-            const storedName = patchFile.path.replace(/\//g, '_');
-            const destFile = join(this.classDir, storedName);
+        // Cas 1: Nouveau format avec jarUrl direct
+        if (remoteVersion.jarUrl) {
+            const jarName = remoteVersion.jarName || CUSTOM_JAR_DEFAULT_NAME;
+            const destFile = join(this.classDir, jarName);
+            this.log(`Téléchargement du JAR custom: ${jarName} depuis ${remoteVersion.jarUrl}`);
+            await this.downloadFile(remoteVersion.jarUrl, destFile);
+        }
+        // Cas 2: Ancien format avec liste de fichiers
+        else if (remoteVersion.files) {
+            for (let i = 0; i < remoteVersion.files.length; i++) {
+                const patchFile = remoteVersion.files[i];
+                const storedName = patchFile.path.replace(/\//g, '_');
+                const destFile = join(this.classDir, storedName);
 
-            this.log(`Téléchargement: ${patchFile.name} depuis ${patchFile.url}`);
-            await this.downloadFile(patchFile.url, destFile);
+                this.log(`Téléchargement: ${patchFile.name} depuis ${patchFile.url}`);
+                await this.downloadFile(patchFile.url, destFile);
 
-            this.sendToRenderer('patch:progress', {
-                step: 'download',
-                progress: Math.round(((i + 1) / remoteVersion.files.length) * 100),
-            });
+                this.sendToRenderer('patch:progress', {
+                    step: 'download',
+                    progress: Math.round(((i + 1) / remoteVersion.files.length) * 100),
+                });
+            }
         }
 
         // Sauvegarder version locale
@@ -289,75 +303,51 @@ export class PatchManager {
         this.log('Téléchargement terminé.');
     }
 
-    // ── Validation magic bytes JAR/ZIP ────────────────────────────────────────
-    private isValidJar(filePath: string): boolean {
+    // ── Patch du classpath dans ProjectZomboid64.json ─────────────────────
+    private async patchGameFiles(gamePath: string, versionInfo: VersionInfo): Promise<void> {
+        const jarName = versionInfo.jarName || CUSTOM_JAR_DEFAULT_NAME;
+
+        // 1. Installation du JAR custom dans le dossier du jeu
+        const srcJar = join(this.classDir, jarName);
+        const destJar = join(gamePath, jarName);
+
+        if (!existsSync(srcJar)) {
+            throw new Error(`Fichier JAR custom introuvable: ${srcJar}`);
+        }
+
+        this.log(`Installation de ${jarName} dans le dossier du jeu...`);
+        copyFileSync(srcJar, destJar);
+
+        // 2. Modification du classpath dans ProjectZomboid64.json
+        const jsonPath = join(gamePath, PZ_JSON_FILENAME);
+        if (!existsSync(jsonPath)) {
+            throw new Error(`${PZ_JSON_FILENAME} introuvable dans ${gamePath}`);
+        }
+
+        this.log(`Modification de ${PZ_JSON_FILENAME} pour charger ${jarName}...`);
         try {
-            const buf = Buffer.alloc(4);
-            const fd = fs.openSync(filePath, 'r');
-            fs.readSync(fd, buf, 0, 4, 0);
-            fs.closeSync(fd);
-            // Magic bytes ZIP : PK\x03\x04
-            return buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04;
-        } catch {
-            return false;
-        }
-    }
+            const content = readFileSync(jsonPath, 'utf8');
+            const json = JSON.parse(content);
+            let classpath: string[] = json.classpath || [];
 
-    // ── Injection dans le JAR ────────────────────────────────────────────────
-    // ── Injection via adm-zip (Node.js pur — aucun jar.exe requis) ───────────
-    private async injectIntoJar(gamePath: string, versionInfo: VersionInfo): Promise<void> {
-        const jarPath = join(gamePath, 'projectzomboid.jar');
+            // Supprimer d'anciennes versions si présentes
+            classpath = classpath.filter(cp => cp !== jarName);
 
-        if (!existsSync(jarPath)) {
-            throw new Error(`projectzomboid.jar introuvable: ${jarPath}`);
-        }
-
-        // Vérifier que le JAR est un ZIP valide avant d'ouvrir avec adm-zip
-        if (!this.isValidJar(jarPath)) {
-            throw new Error(
-                'projectzomboid.jar est corrompu ou invalide (magic bytes ZIP manquants). ' +
-                'Utilisez le bouton "Restaurer le JAR d\'origine" pour le réparer.'
-            );
-        }
-
-        this.log('Injection des .class dans le JAR (adm-zip)...');
-        this.sendToRenderer('patch:progress', { step: 'inject', progress: 0 });
-
-        const zip = new AdmZip(jarPath);
-
-        for (let i = 0; i < versionInfo.files.length; i++) {
-            const patchFile = versionInfo.files[i];
-            const storedName = patchFile.path.replace(/\//g, '_');
-            const srcFile = join(this.classDir, storedName);
-
-            if (!existsSync(srcFile)) {
-                throw new Error(`Fichier patch introuvable: ${srcFile} — Re-téléchargement nécessaire`);
-            }
-
-            const classBytes = fs.readFileSync(srcFile);
-            // Chemin interne au ZIP : "zombie/network/packets/actions/StatePacket.class"
-            const entryName = patchFile.path;
-            const entryDir = entryName.substring(0, entryName.lastIndexOf('/') + 1);
-
-            // Remplacer l'entrée existante ou l'ajouter si absente
-            const existing = zip.getEntry(entryName);
-            if (existing) {
-                zip.updateFile(entryName, classBytes);
+            // Trouver l'index de projectzomboid.jar pour insérer juste avant
+            const pzIdx = classpath.indexOf('projectzomboid.jar');
+            if (pzIdx >= 0) {
+                classpath.splice(pzIdx, 0, jarName);
             } else {
-                zip.addFile(entryName, classBytes, '', 0);
+                // Au cas où, si projectzomboid.jar n'est pas là, on le met au début
+                classpath.unshift(jarName);
             }
 
-            this.log(`  [${i + 1}/${versionInfo.files.length}] ${entryName} injecté`);
-            this.sendToRenderer('patch:progress', {
-                step: 'inject',
-                progress: Math.round(((i + 1) / versionInfo.files.length) * 90),
-            });
+            json.classpath = classpath;
+            writeFileSync(jsonPath, JSON.stringify(json, null, '\t'), 'utf8');
+            this.log('Classpath mis à jour avec succès.');
+        } catch (e: any) {
+            throw new Error(`Erreur modification classpath: ${e.message}`);
         }
-
-        // Écrire le JAR modifié sur disque
-        zip.writeZip(jarPath);
-        this.log('Injection réussie (adm-zip).');
-        this.sendToRenderer('patch:progress', { step: 'inject', progress: 100 });
     }
 
     // ── Téléchargement seul (sans injection dans le JAR) ─────────────────────
@@ -376,7 +366,7 @@ export class PatchManager {
             const remote = this._lastRemote;
             if (!remote) throw new Error('Patch distant inaccessible');
 
-            await this.downloadPatchedClasses(remote);
+            await this.downloadPatchFiles(remote);
             this.sendToRenderer('patch:progress', { step: 'ready', progress: 100 });
             this.log(`Mise à jour v${remote.version} téléchargée — prête pour le prochain lancement.`);
             return { success: true };
@@ -397,18 +387,12 @@ export class PatchManager {
             if (checkResult.needsDownload) {
                 const remote = this._lastRemote;
                 if (!remote) throw new Error('Patch distant inaccessible et aucune version locale');
-                await this.downloadPatchedClasses(remote);
+                await this.downloadPatchFiles(remote);
                 versionToApply = remote;
 
-                // Mise à jour de version : forcer le JAR d'origine (backupJar) avant d'injecter
-                const originResult = await this.restoreFromOriginBackupWithRemote(gamePath, remote);
-                if (!originResult.success && originResult.error?.includes('backupJar non configuré')) {
-                    this.log('backupJar non configuré — on continue avec le JAR actuel.');
-                } else if (!originResult.success) {
-                    throw new Error(originResult.error ?? 'Échec restauration JAR d\'origine');
-                } else {
-                    await this.createBackup(gamePath, true);
-                }
+                // On ne force plus la restauration du JAR d'origine si on n'injecte plus dedans,
+                // mais on peut quand même créer un backup du JSON si on veut être prudent.
+                await this.createBackup(gamePath);
             } else {
                 versionToApply = await this.getLocalVersion();
             }
@@ -416,14 +400,8 @@ export class PatchManager {
             if (!versionToApply) {
                 throw new Error('Aucune version de patch disponible');
             }
-            if (!Array.isArray(versionToApply.files) || versionToApply.files.length === 0) {
-                throw new Error(`version.json invalide — "files" vide ou absent (version: ${versionToApply.version})`);
-            }
 
-            if (!checkResult.needsDownload) {
-                await this.createBackup(gamePath);
-            }
-            await this.injectIntoJar(gamePath, versionToApply);
+            await this.patchGameFiles(gamePath, versionToApply);
 
             this.sendToRenderer('patch:progress', { step: 'ready', progress: 100 });
             return { success: true };
@@ -434,32 +412,55 @@ export class PatchManager {
     }
 
     // ── Backup ────────────────────────────────────────────────────────────────
-    async createBackup(gamePath: string, forceOverwrite = false): Promise<void> {
-        const jarPath = join(gamePath, 'projectzomboid.jar');
-        const bakPath = join(gamePath, 'projectzomboid.jar.bak');
+    async createBackup(gamePath: string): Promise<void> {
+        const jsonPath = join(gamePath, PZ_JSON_FILENAME);
+        const bakPath = join(gamePath, `${PZ_JSON_FILENAME}.bak`);
 
-        if (forceOverwrite || !existsSync(bakPath)) {
-            this.log(forceOverwrite ? 'Mise à jour du backup (.bak) avec le JAR d\'origine.' : 'Création du backup du JAR original...');
-            copyFileSync(jarPath, bakPath);
-            this.log('Backup créé: projectzomboid.jar.bak');
-        } else {
-            this.log('Backup existant conservé.');
+        if (!existsSync(bakPath)) {
+            this.log(`Création du backup de ${PZ_JSON_FILENAME}...`);
+            copyFileSync(jsonPath, bakPath);
         }
     }
 
     // ── Restauration ──────────────────────────────────────────────────────────
     async restoreBackup(gamePath: string): Promise<{ success: boolean; error?: string }> {
-        const jarPath = join(gamePath, 'projectzomboid.jar');
-        const bakPath = join(gamePath, 'projectzomboid.jar.bak');
+        const jsonPath = join(gamePath, PZ_JSON_FILENAME);
+        const bakPath = join(gamePath, `${PZ_JSON_FILENAME}.bak`);
 
         try {
-            if (!existsSync(bakPath)) {
-                this.log('Aucun backup à restaurer.');
-                return { success: true };
+            // 1. Restauration du JSON
+            if (existsSync(bakPath)) {
+                this.log(`Restauration de ${PZ_JSON_FILENAME} original...`);
+                copyFileSync(bakPath, jsonPath);
+                fs.unlinkSync(bakPath);
             }
-            this.log('Restauration du JAR original...');
-            copyFileSync(bakPath, jarPath);
-            this.log('Restauration réussie. Patch retiré.');
+
+            // 2. Suppression du JAR custom (optionnel mais propre)
+            const local = await this.getLocalVersion();
+            if (local) {
+                const jarName = local.jarName || CUSTOM_JAR_DEFAULT_NAME;
+                const destJar = join(gamePath, jarName);
+                if (existsSync(destJar)) {
+                    this.log('Suppression de la-station.jar...');
+            try {
+                fs.unlinkSync(destJar);
+            } catch (e: any) {
+                if (e.code === 'EBUSY') {
+                    this.log('Le fichier est occupé, nouvelle tentative dans 2s...');
+                    await new Promise(r => setTimeout(r, 2000));
+                    try { fs.unlinkSync(destJar); } catch { /* ignore final fail */ }
+                }
+            }
+                }
+            }
+
+            // 3. Suppression de tout ancien backup JAR résiduel
+            const oldBak = join(gamePath, 'projectzomboid.jar.bak');
+            if (existsSync(oldBak)) {
+                try { fs.unlinkSync(oldBak); } catch { /* ignore */ }
+            }
+
+            this.log('Restauration réussie.');
             return { success: true };
         } catch (err: any) {
             this.log(`Erreur de restauration: ${err.message}`);
@@ -467,71 +468,6 @@ export class PatchManager {
         }
     }
 
-    /**
-     * Restaure projectzomboid.jar avec le JAR d'origine téléchargé depuis l'URL backupJar
-     * du VersionInfo fourni. Utilisé en interne quand on a déjà le remote (ex: lors d'un update).
-     */
-    private async restoreFromOriginBackupWithRemote(
-        gamePath: string,
-        remote: VersionInfo
-    ): Promise<{ success: boolean; error?: string }> {
-        const jarPath = join(gamePath, 'projectzomboid.jar');
-        const tempPath = join(this.appDataPath, 'origin-backup.jar.tmp');
-
-        if (!remote?.backupJar || typeof remote.backupJar !== 'string' || !remote.backupJar.startsWith('http')) {
-            return { success: false, error: 'backupJar non configuré dans version.json.' };
-        }
-
-        this.log(`Téléchargement du JAR d'origine (backupJar) pour v${remote.version}...`);
-        this.sendToRenderer('patch:progress', { step: 'origin-backup', progress: 0 });
-        await this.downloadFile(remote.backupJar, tempPath);
-        this.sendToRenderer('patch:progress', { step: 'origin-backup', progress: 100 });
-
-        if (!existsSync(tempPath)) {
-            return { success: false, error: 'Téléchargement échoué (fichier temporaire absent).' };
-        }
-
-        if (!this.isValidJar(tempPath)) {
-            try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
-            return {
-                success: false,
-                error: `Le fichier téléchargé depuis backupJar n'est pas un JAR valide.`,
-            };
-        }
-
-        this.log('Remplacement de projectzomboid.jar par le JAR d\'origine...');
-        copyFileSync(tempPath, jarPath);
-        try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
-        this.log('JAR d\'origine installé.');
-        return { success: true };
-    }
-
-    /**
-     * Restaure projectzomboid.jar avec le JAR d'origine téléchargé depuis l'URL
-     * indiquée dans version.json (backupJar). Utilisable quand le .bak est absent ou corrompu.
-     */
-    async restoreFromOriginBackup(gamePath: string): Promise<{ success: boolean; error?: string }> {
-        try {
-            const remote = await this.fetchRemoteVersion();
-            if (!remote) return { success: false, error: 'Version distante inaccessible.' };
-            return this.restoreFromOriginBackupWithRemote(gamePath, remote);
-        } catch (err: any) {
-            this.log(`Erreur restauration JAR d'origine: ${err.message}`);
-            return { success: false, error: err.message };
-        }
-    }
-
-    // ── Détection patch orphelin (crash précédent) ────────────────────────────
-    async detectOrphanPatch(gamePath: string): Promise<boolean> {
-        const jarPath = join(gamePath, 'projectzomboid.jar');
-        const bakPath = join(gamePath, 'projectzomboid.jar.bak');
-        if (existsSync(bakPath) && existsSync(jarPath)) {
-            const jarStat = fs.statSync(jarPath);
-            const bakStat = fs.statSync(bakPath);
-            return jarStat.size !== bakStat.size || jarStat.mtimeMs > bakStat.mtimeMs;
-        }
-        return false;
-    }
 
     // ── Log ───────────────────────────────────────────────────────────────────
     private log(message: string): void {

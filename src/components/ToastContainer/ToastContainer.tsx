@@ -35,7 +35,7 @@ const ICONS: Record<Toast['type'], React.ReactNode> = {
 };
 
 // ─── Toast individuel ─────────────────────────────────────────────────────────
-const ToastItem: React.FC<{ toast: Toast }> = ({ toast }) => {
+const ToastItem = React.forwardRef<HTMLDivElement, { toast: Toast }>(({ toast }, ref) => {
     const { dispatch } = useLauncher();
 
     const dismiss = () => dispatch({ type: 'REMOVE_TOAST', payload: toast.id });
@@ -47,6 +47,7 @@ const ToastItem: React.FC<{ toast: Toast }> = ({ toast }) => {
 
     return (
         <motion.div
+            ref={ref}
             className={`${styles.toast} ${styles[toast.type]}`}
             initial={{ opacity: 0, x: 60, scale: 0.95 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -76,7 +77,7 @@ const ToastItem: React.FC<{ toast: Toast }> = ({ toast }) => {
             </button>
         </motion.div>
     );
-};
+});
 
 // ─── Conteneur global ─────────────────────────────────────────────────────────
 export const ToastContainer: React.FC = () => {

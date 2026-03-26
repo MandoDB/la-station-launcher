@@ -7,6 +7,8 @@ import { PatchStatus } from '../../components/PatchStatus/PatchStatus';
 import { LogPanel } from '../../components/LogPanel/LogPanel';
 import { OnboardingScreen } from '../../components/OnboardingScreen/OnboardingScreen';
 import { ConsoleViewer } from '../../components/ConsoleViewer/ConsoleViewer';
+import { ScreenshotModal } from '../../components/ScreenshotModal/ScreenshotModal';
+import { GalleryModal } from '../../components/GalleryModal/GalleryModal';
 import { ServerInfo } from '../../types/electron';
 import styles from './MainPage.module.css';
 
@@ -38,14 +40,12 @@ interface MainPageProps {
 }
 
 export const MainPage: React.FC<MainPageProps> = ({ updatePending = false }) => {
-    const { state } = useLauncher();
-    const { showOnboarding, isLoading, gamePath, localVersion } = state;
+    const { state, dispatch } = useLauncher();
+    const { showOnboarding, isLoading, gamePath, localVersion, pendingScreenshot } = state;
     const [logoError, setLogoError] = useState(false);
     const [showConsole, setShowConsole] = useState(false);
+    const [showGallery, setShowGallery] = useState(false);
     const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
-    const [originBackupLoading, setOriginBackupLoading] = useState(false);
-    const [originBackupError, setOriginBackupError] = useState<string | null>(null);
-    const [originBackupSuccess, setOriginBackupSuccess] = useState(false);
 
     // Requête initiale + abonnement aux mises à jour du main process
     useEffect(() => {
@@ -54,25 +54,6 @@ export const MainPage: React.FC<MainPageProps> = ({ updatePending = false }) => 
         return () => { window.electronAPI.removeAllListeners('server:players'); };
     }, []);
 
-    const handleRestoreOriginBackup = async () => {
-        if (!gamePath) return;
-        setOriginBackupLoading(true);
-        setOriginBackupError(null);
-        setOriginBackupSuccess(false);
-        try {
-            const result = await window.electronAPI.restoreOriginBackup(gamePath);
-            if (result.success) {
-                setOriginBackupSuccess(true);
-                setTimeout(() => setOriginBackupSuccess(false), 4000);
-            } else {
-                setOriginBackupError(result.error ?? 'Erreur inconnue');
-            }
-        } catch (e: unknown) {
-            setOriginBackupError(e instanceof Error ? e.message : 'Erreur');
-        } finally {
-            setOriginBackupLoading(false);
-        }
-    };
 
     if (isLoading) {
         return (
@@ -146,9 +127,16 @@ export const MainPage: React.FC<MainPageProps> = ({ updatePending = false }) => 
                 {showOnboarding && <OnboardingScreen key="onboarding" />}
             </AnimatePresence>
 
-            {/* Modal console */}
             <AnimatePresence>
                 {showConsole && <ConsoleViewer key="console" onClose={() => setShowConsole(false)} />}
+                {showGallery && <GalleryModal key="gallery" onClose={() => setShowGallery(false)} />}
+                {pendingScreenshot && (
+                    <ScreenshotModal 
+                        key="screenshot" 
+                        screenshot={pendingScreenshot} 
+                        onClose={() => dispatch({ type: 'SET_PENDING_SCREENSHOT', payload: null })} 
+                    />
+                )}
             </AnimatePresence>
 
             {!showOnboarding && (
@@ -191,36 +179,6 @@ export const MainPage: React.FC<MainPageProps> = ({ updatePending = false }) => 
                             <PlayButton updatePending={updatePending} />
                         </motion.div>
 
-                        {/* Restaurer JAR d'origine — juste sous JOUER */}
-                        {gamePath && (
-                            <motion.div
-                                className={styles.originBackupRow}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: 0.5, duration: 0.4 }}
-                            >
-                                {originBackupError && (
-                                    <p className={styles.originBackupError}>{originBackupError}</p>
-                                )}
-                                <motion.button
-                                    type="button"
-                                    className={`${styles.originBackupBtn} ${originBackupSuccess ? styles.originBackupBtnSuccess : ''}`}
-                                    onClick={handleRestoreOriginBackup}
-                                    disabled={originBackupLoading}
-                                    whileHover={!originBackupLoading ? { scale: 1.02 } : {}}
-                                    whileTap={!originBackupLoading ? { scale: 0.98 } : {}}
-                                    title="Remplacer projectzomboid.jar par le JAR original (version saine depuis le dépôt)"
-                                >
-                                    {originBackupLoading ? (
-                                        <>Téléchargement…</>
-                                    ) : originBackupSuccess ? (
-                                        <>✓ JAR d'origine restauré</>
-                                    ) : (
-                                        <>Restaurer le JAR d'origine</>
-                                    )}
-                                </motion.button>
-                            </motion.div>
-                        )}
                     </div>
 
                     {/* ── Footer ───────────────────────────────────── */}
@@ -234,13 +192,28 @@ export const MainPage: React.FC<MainPageProps> = ({ updatePending = false }) => 
                             <PatchStatus />
                         </motion.div>
 
-                        {/* Boutons droite */}
                         <motion.div
                             className={styles.footerRight}
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: 0.5, duration: 0.4 }}
                         >
+                            {/* Galerie */}
+                            <motion.button
+                                className={styles.galleryBtn}
+                                onClick={() => setShowGallery(true)}
+                                whileHover={{ scale: 1.04 }}
+                                whileTap={{ scale: 0.96 }}
+                                title="Galerie des captures d'écran"
+                            >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                    <polyline points="21 15 16 10 5 21" />
+                                </svg>
+                                <span>Galerie</span>
+                            </motion.button>
+
                             {/* Console PZ */}
                             <motion.button
                                 id="btn-console"
@@ -292,16 +265,14 @@ export const MainPage: React.FC<MainPageProps> = ({ updatePending = false }) => 
                 </div>
             )}
 
-            {!showOnboarding && (
-                <motion.div
-                    className={styles.logsWrapper}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.7 }}
-                >
-                    <LogPanel />
-                </motion.div>
-            )}
+            <motion.div
+                className={styles.logsWrapper}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.7 }}
+            >
+                <LogPanel />
+            </motion.div>
         </div>
     );
 };

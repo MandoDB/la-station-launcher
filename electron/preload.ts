@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restorePatch: (p: string) => ipcRenderer.invoke('patch:restore', p),
   getLocalVersion: () => ipcRenderer.invoke('patch:get-local-version'),
   downloadUpdate: () => ipcRenderer.invoke('patch:download-update'),
-  restoreOriginBackup: (gamePath: string) => ipcRenderer.invoke('patch:restore-origin-backup', gamePath),
+
 
   // ── Session ───────────────────────────────────────────────────────────────
   startSession: (p: string) => ipcRenderer.invoke('session:start', p),
@@ -36,6 +36,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   consoleStopWatch: () => ipcRenderer.invoke('console:stop-watch'),
   consoleGetPath: () => ipcRenderer.invoke('console:get-path'),
   consoleSendDiscord: (options?: { includeUserId?: boolean }) => ipcRenderer.invoke('console:send-discord', options),
+
+  // ── Screenshot ─────────────────────────────────────────────────────────────
+  screenshotCapture: () => ipcRenderer.invoke('screenshot:capture'),
+  screenshotList: (limit?: number) => ipcRenderer.invoke('screenshot:list', limit),
+  screenshotDelete: (path: string) => ipcRenderer.invoke('screenshot:delete', path),
+  screenshotOpenFolder: () => ipcRenderer.send('screenshot:open-folder'),
+  screenshotOpenModal: (path: string) => ipcRenderer.send('screenshot:open-modal', path),
+  screenshotShareDone: () => ipcRenderer.send('screenshot:share-done'),
+  screenshotShareCancel: () => ipcRenderer.send('screenshot:share-cancel'),
+  screenshotSendDiscord: (path: string | string[], title?: string, userId?: string) => ipcRenderer.invoke('screenshot:send-discord', path, title, userId),
+  screenshotGetDir: () => ipcRenderer.invoke('screenshot:get-dir'),
+  screenshotSetDir: (path: string) => ipcRenderer.invoke('screenshot:set-dir', path),
+  screenshotSnippetReady: (rect: { x: number, y: number, width: number, height: number }) => ipcRenderer.send('screenshot:snippet-ready', rect),
+  screenshotSnippetCancel: () => ipcRenderer.send('screenshot:snippet-cancel'),
+  onScreenshotCaptured: (cb: (m: any) => void) => ipcRenderer.on('screenshot:captured', (_e, d) => cb(d)),
 
   // ── Discord IPC ───────────────────────────────────────────────────────────
   discordGetUser: () => ipcRenderer.invoke('discord:get-user'),
@@ -72,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onAutoRestoreDone: (cb: (d: any) => void) => ipcRenderer.on('session:auto-restore-done', (_e, d) => cb(d)),
   onPatchAutoCheck: (cb: (d: any) => void) => ipcRenderer.on('patch:auto-check', (_e, d) => cb(d)),
   onUpdaterDownloaded: (cb: (d: any) => void) => ipcRenderer.on('updater:downloaded', (_e, d) => cb(d)),
+  onShowScreenshotModal: (cb: (path: string) => void) => ipcRenderer.on('screenshot:open-modal', (_e, path) => cb(path)),
 
 
 

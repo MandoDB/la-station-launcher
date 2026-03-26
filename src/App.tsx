@@ -6,14 +6,32 @@ import { MainPage } from './pages/MainPage/MainPage';
 import { ToastContainer } from './components/ToastContainer/ToastContainer';
 import { Settings } from './pages/Settings/Settings';
 import { LegalNotice, hasAcceptedLegal } from './components/LegalNotice/LegalNotice';
+import { CaptureNotification } from './components/CaptureNotification/CaptureNotification';
+import { SnippetTool } from './components/SnippetTool/SnippetTool';
+import { ScreenshotModal } from './components/ScreenshotModal/ScreenshotModal';
 
 const App: React.FC = () => {
     const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedLegal());
     const [showSettings, setShowSettings] = useState(false);
     const [launcherUpdate, setLauncherUpdate] = useState<{ version: string } | null>(null);
     const [installing, setInstalling] = useState(false);
+    const [autoScreenshot, setAutoScreenshot] = useState<string | null>(null);
 
-    const showLegalNotice = useMemo(() => !legalAccepted, [legalAccepted]);
+    const [isNotification, setIsNotification] = useState(() => window.location.hash.includes('capture-notification'));
+    const [isSnippet, setIsSnippet] = useState(() => window.location.hash.includes('snippet-tool'));
+    const [isShare, setIsShare] = useState(() => window.location.hash.includes('share-screenshot'));
+
+    const showLegalNotice = useMemo(() => !legalAccepted && !isNotification && !isSnippet && !isShare, [legalAccepted, isNotification, isSnippet, isShare]);
+
+    useEffect(() => {
+        const handleHashChange = () => {
+            setIsNotification(window.location.hash.includes('capture-notification'));
+            setIsSnippet(window.location.hash.includes('snippet-tool'));
+            setIsShare(window.location.hash.includes('share-screenshot'));
+        };
+        window.addEventListener('hashchange', handleHashChange);
+        return () => window.removeEventListener('hashchange', handleHashChange);
+    }, []);
 
     useEffect(() => {
         // Vérifier si une mise à jour a déjà été téléchargée avant le chargement de l'UI
@@ -25,8 +43,13 @@ const App: React.FC = () => {
             setLauncherUpdate({ version: data.version });
         });
 
+        window.electronAPI.onShowScreenshotModal((path) => {
+            setAutoScreenshot(path);
+        });
+
         return () => {
             window.electronAPI.removeAllListeners('updater:downloaded');
+            window.electronAPI.removeAllListeners('screenshot:open-modal');
         };
     }, []);
 
@@ -34,6 +57,36 @@ const App: React.FC = () => {
         setInstalling(true);
         await window.electronAPI.updaterQuitAndInstall();
     };
+
+    if (isNotification) {
+        return (
+            <div className="notification-wrapper">
+                <CaptureNotification />
+            </div>
+        );
+    }
+
+    if (isSnippet) {
+        return (
+            <SnippetTool />
+        );
+    }
+
+    if (isShare) {
+        const hash = window.location.hash;
+        const params = new URLSearchParams(hash.split('?')[1]);
+        const sharePath = params.get('path');
+        if (!sharePath) return null;
+
+        return (
+            <div className="share-wrapper">
+                <ScreenshotModal 
+                    screenshot={{ path: decodeURIComponent(sharePath), id: '', timestamp: 0, filename: '' }} 
+                    onClose={() => window.electronAPI.screenshotShareCancel()} 
+                />
+            </div>
+        );
+    }
 
     return (
         <LauncherProvider>
@@ -172,6 +225,15 @@ const App: React.FC = () => {
                 <AnimatePresence>
                     {showLegalNotice && (
                         <LegalNotice key="legal" onAccept={() => setLegalAccepted(true)} />
+                    )}
+                </AnimatePresence>
+
+                <AnimatePresence>
+                    {autoScreenshot && (
+                        <ScreenshotModal 
+                            screenshot={{ path: autoScreenshot, id: '', timestamp: 0, filename: '' }} 
+                            onClose={() => setAutoScreenshot(null)} 
+                        />
                     )}
                 </AnimatePresence>
             </div>

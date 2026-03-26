@@ -5,6 +5,7 @@ import type {
     VersionInfo,
     PatchProgressData,
     SessionUpdateData,
+    ScreenshotMetadata,
 } from '../types/electron.d';
 
 // ─── Types du contexte ───────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ interface LauncherState {
     isLoading: boolean;
     showOnboarding: boolean;
     toasts: Toast[];
+    pendingScreenshot: ScreenshotMetadata | null;
 }
 
 export interface Toast {
@@ -59,7 +61,8 @@ type Action =
     | { type: 'SET_LOADING'; payload: boolean }
     | { type: 'SET_SHOW_ONBOARDING'; payload: boolean }
     | { type: 'ADD_TOAST'; payload: Toast }
-    | { type: 'REMOVE_TOAST'; payload: string };
+    | { type: 'REMOVE_TOAST'; payload: string }
+    | { type: 'SET_PENDING_SCREENSHOT'; payload: ScreenshotMetadata | null };
 
 // ─── Reducer ─────────────────────────────────────────────────────────────────
 function reducer(state: LauncherState, action: Action): LauncherState {
@@ -94,6 +97,8 @@ function reducer(state: LauncherState, action: Action): LauncherState {
             return { ...state, toasts: [...state.toasts, action.payload] };
         case 'REMOVE_TOAST':
             return { ...state, toasts: state.toasts.filter((t) => t.id !== action.payload) };
+        case 'SET_PENDING_SCREENSHOT':
+            return { ...state, pendingScreenshot: action.payload };
         default:
             return state;
     }
@@ -113,6 +118,7 @@ const initialState: LauncherState = {
     isLoading: true,
     showOnboarding: false,
     toasts: [],
+    pendingScreenshot: null,
 };
 
 // ─── Contexte ─────────────────────────────────────────────────────────────────
@@ -236,6 +242,20 @@ export function LauncherProvider({ children }: { children: React.ReactNode }) {
                 });
             });
 
+            window.electronAPI.onScreenshotCaptured((m) => {
+                dispatch({ type: 'SET_PENDING_SCREENSHOT', payload: null }); // Reset previous
+                addToast({
+                    type: 'success',
+                    title: '📷 Capture d\'écran enregistrée',
+                    message: m.filename,
+                    duration: 8000,
+                    action: {
+                        label: 'Partager',
+                        onClick: () => dispatch({ type: 'SET_PENDING_SCREENSHOT', payload: m }),
+                    }
+                });
+            });
+
             // Auto-updater launcher
             window.electronAPI.onUpdaterDownloaded(({ version }) => {
                 addToast({
@@ -259,20 +279,15 @@ export function LauncherProvider({ children }: { children: React.ReactNode }) {
         init();
 
         return () => {
-            window.electronAPI.removeAllListeners('patch:progress');
-            window.electronAPI.removeAllListeners('session:update');
-            window.electronAPI.removeAllListeners('log:entry');
-            window.electronAPI.removeAllListeners('session:force-restore-start');
-            window.electronAPI.removeAllListeners('patch:auto-check');
-            window.electronAPI.removeAllListeners('session:auto-restore-done');
-            window.electronAPI.removeAllListeners('updater:downloaded');
+            // Dans un Provider permanent, on évite de tout supprimer car React StrictMode 
+            // exécute le cleanup dès le premier montage en dev, ce qui détruit les listeners.
         };
     }, []);
 
     // ── Détection du jeu ──────────────────────────────────────────────────────
     const handleDetectGame = useCallback(async () => {
         const result = await window.electronAPI.detectGame();
-        if (result.found && result.path) {
+        if (result && result.found && result.path) {
             dispatch({ type: 'SET_GAME_PATH', payload: result.path });
             dispatch({ type: 'SET_GAME_DETECTED', payload: true });
             dispatch({ type: 'SET_SHOW_ONBOARDING', payload: false });

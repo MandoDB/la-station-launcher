@@ -84,6 +84,14 @@ export interface DiscordUser {
     avatarUrl: string | null;
 }
 
+// ─── Screenshot ──────────────────────────────────────────────────────────────
+export interface ScreenshotMetadata {
+    id: string;
+    path: string;
+    timestamp: number;
+    filename: string;
+}
+
 // ─── Extension de Window pour l'API Electron ──────────────────────────────────
 
 declare global {
@@ -139,8 +147,24 @@ declare global {
             discordSetPresence: (state: 'idle' | 'patching' | 'playing', startTimestamp?: number) => Promise<void>;
 
             // Settings
-            settingsGet: () => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[] }>;
-            settingsSet: (patch: { discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[] }) => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[] }>;
+            settingsGet: () => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[]; screenshotDir?: string; screenshotKey?: string }>;
+            settingsSet: (patch: { discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[]; screenshotDir?: string; screenshotKey?: string }) => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[]; screenshotDir?: string; screenshotKey?: string }>;
+
+            // Screenshot
+            screenshotCapture: () => Promise<ScreenshotMetadata | null>;
+            screenshotList: (limit?: number) => Promise<ScreenshotMetadata[]>;
+            screenshotDelete: (path: string) => Promise<void>;
+            screenshotOpenFolder: () => void;
+            screenshotOpenModal: (path: string) => void;
+            screenshotShareDone: () => void;
+            screenshotShareCancel: () => void;
+            screenshotSendDiscord: (paths: string | string[], title?: string, userId?: string) => Promise<{ success: boolean; error?: string }>;
+            screenshotGetDir: () => Promise<string>;
+            screenshotSetDir: (path: string) => Promise<boolean>;
+            screenshotSnippetReady: (rect: { x: number, y: number, width: number, height: number }) => void;
+            screenshotSnippetCancel: () => void;
+            onScreenshotCaptured: (callback: (metadata: ScreenshotMetadata) => void) => void;
+            onShowScreenshotModal: (callback: (path: string) => void) => void;
 
             // Utilitaires
             openExternal: (url: string) => void;

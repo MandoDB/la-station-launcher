@@ -25,7 +25,8 @@ export interface SessionState {
 export type SessionEventCallback = (event: string, data: any) => void;
 
 // ─── Constantes (cross‑platform) ─────────────────────────────────────────────
-const PZ_PROCESS_NAME = process.platform === 'win32' ? 'ProjectZomboid64.exe' : 'ProjectZomboid64';
+// On vérifie plusieurs variantes possibles du nom du processus
+const PZ_PROCESS_NAMES = ['ProjectZomboid64.exe', 'ProjectZomboid32.exe', 'ProjectZomboid64', 'ProjectZomboid32', 'zomboid'];
 const PZ_STEAM_URI = 'steam://rungameid/108600';
 const LAUNCH_TIMEOUT_MS = 60_000;   // 60 secondes pour démarrer
 const POLL_INTERVAL_MS = 2_000;     // Vérification toutes les 2 secondes
@@ -47,15 +48,23 @@ export class SessionManager {
     // ── Vérification si le processus PZ est actif (cross‑platform) ─────────────
     private async isPZRunning(): Promise<boolean> {
         try {
+            let running = false;
             if (process.platform === 'win32') {
-                const { stdout } = await execAsync(
-                    `tasklist /FI "IMAGENAME eq ${PZ_PROCESS_NAME}" /FO CSV /NH`
-                );
-                return stdout.toLowerCase().includes(PZ_PROCESS_NAME.toLowerCase());
+                // On récupère la liste brute pour être sûr de ne rien rater
+                const { stdout } = await execAsync('tasklist /FO CSV /NH');
+                const output = stdout.toLowerCase();
+                running = PZ_PROCESS_NAMES.some(name => {
+                    const match = output.includes(name.toLowerCase());
+                    if (match) console.log(`[SessionManager] Process found: ${name}`);
+                    return match;
+                });
+            } else {
+                const { stdout } = await execAsync('pgrep -f "ProjectZomboid64|ProjectZomboid32|zomboid"');
+                running = stdout.trim().length > 0;
             }
-            const { stdout } = await execAsync(`pgrep -f "${PZ_PROCESS_NAME}"`);
-            return stdout.trim().length > 0;
-        } catch {
+            return running;
+        } catch (e: any) {
+            console.error(`[SessionManager] Erreur check processus: ${e.message}`);
             return false;
         }
     }
@@ -64,11 +73,11 @@ export class SessionManager {
     async killPZ(): Promise<void> {
         try {
             if (process.platform === 'win32') {
-                await execAsync(`taskkill /IM "${PZ_PROCESS_NAME}" /F`);
+                await execAsync(`taskkill /IM "ProjectZomboid64.exe" /IM "ProjectZomboid32.exe" /F`);
             } else {
-                await execAsync(`pkill -f "${PZ_PROCESS_NAME}"`);
+                await execAsync(`pkill -f "ProjectZomboid64|ProjectZomboid32|zomboid"`);
             }
-            this.log('Project Zomboid terminé de force.');
+            this.log('Project Zomboid (ou processus liés) terminé.');
         } catch {
             // Processus déjà fermé ou introuvable — pas d'erreur bloquante
         }
@@ -90,17 +99,17 @@ export class SessionManager {
     // ── Attente du démarrage du processus ─────────────────────────────────────
     private async waitForProcessStart(): Promise<boolean> {
         const startTime = Date.now();
-        this.log(`Attente du processus ${PZ_PROCESS_NAME}...`);
+        this.log(`Attente du démarrage du jeu...`);
 
         while (Date.now() - startTime < LAUNCH_TIMEOUT_MS) {
             await this.sleep(1000);
             if (await this.isPZRunning()) {
-                this.log(`${PZ_PROCESS_NAME} détecté !`);
+                this.log(`Project Zomboid détecté !`);
                 return true;
             }
         }
 
-        this.log(`Timeout: ${PZ_PROCESS_NAME} n'a pas démarré en 60s`);
+        this.log(`Timeout: Le jeu n'a pas démarré en 60s ou n'a pas pu être détecté.`);
         return false;
     }
 

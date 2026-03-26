@@ -8,6 +8,9 @@ import {
     shell,
     nativeTheme,
     Menu,
+    globalShortcut,
+    protocol,
+    net,
 } from 'electron';
 // Token injecté au build par Vite (vite.config.ts → define.__GITHUB_TOKEN__)
 // Fallback sur process.env pour les rares cas où la variable ne serait pas injectée
@@ -15,12 +18,18 @@ declare const __GITHUB_TOKEN__: string;
 const GITHUB_TOKEN: string = (typeof __GITHUB_TOKEN__ !== 'undefined' ? __GITHUB_TOKEN__ : '') || process.env.GITHUB_TOKEN || '';
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { pathToFileURL } from 'url';
 import { autoUpdater } from 'electron-updater';
 import { PatchManager } from './patchManager';
 import { GameDetector } from './gameDetector';
 import { SessionManager } from './sessionManager';
 import { ConsoleWatcher } from './consoleWatcher';
+
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'local-img', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+]);
 import { DiscordManager } from './discordManager';
+import { ScreenshotManager, ScreenshotMetadata } from './screenshotManager';
 import { queryServer, ServerInfo } from './serverQuery';
 import { fetchRemoteMods, applyServerMods, restoreServerMods, resolveActiveMods, ModEntry } from './modManager';
 
@@ -28,7 +37,7 @@ nativeTheme.themeSource = 'dark';
 
 // ─── Config serveur ──────────────────────────────────────────────────────────
 const SERVER_HOST = 'play.la-station.org';
-const SERVER_QUERY_PORT = 16262;
+const SERVER_QUERY_PORT = 16261;
 const SERVER_POLL_INTERVAL_MS = 30_000;
 
 // ─── Config patch auto-check ─────────────────────────────────────────────────
@@ -44,6 +53,8 @@ interface AppSettings {
     modsEnabled?: boolean;
     /** IDs des mods serveur explicitement désactivés par l'utilisateur */
     disabledMods?: string[];
+    screenshotDir?: string;
+    screenshotKey?: string;
 }
 
 let settingsPath = ''; // initialisé dans initManagers
@@ -74,6 +85,10 @@ let patchManager: PatchManager | null = null;
 let sessionManager: SessionManager | null = null;
 let consoleWatcher: ConsoleWatcher | null = null;
 let discordManager: DiscordManager | null = null;
+let screenshotManager: ScreenshotManager | null = null;
+let notificationWindow: BrowserWindow | null = null;
+let snippetWindow: BrowserWindow | null = null;
+let shareWindow: BrowserWindow | null = null;
 
 // Chemin du backup mods (initialisé dans initManagers)
 let modsBackupPath = '';
@@ -265,19 +280,40 @@ async function checkOrphanSession(): Promise<void> {
 }
 
 function initManagers(): void {
-    const appDataPath = join(app.getPath('appData'), 'PZLauncher');
+    const userDataPath = app.getPath('userData');
+    const appDataPath = join(userDataPath, 'patch'); // On garde 'patch' pour ne pas d'incohérence avec l'ancien nom si possible
     if (!existsSync(appDataPath)) mkdirSync(appDataPath, { recursive: true });
+    
+    console.log(`[Main] App Data Path: ${appDataPath}`);
     settingsPath = join(appDataPath, 'settings.json');
-
     modsBackupPath = join(appDataPath, 'mods.backup.json');
-    patchManager = new PatchManager(appDataPath, (event, data) => mainWindow?.webContents.send(event, data), GITHUB_TOKEN);
-    discordManager = new DiscordManager((event, data) => mainWindow?.webContents.send(event, data));
+
+    // Helper pour envoyer au renderer de façon sécurisée avec logs terminal
+    const sendToUI = (event: string, data: any) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(event, data);
+        } else {
+            console.warn(`[Main] Tentative d'envoi IPC (${event}) alors que la fenêtre est absente/détruite.`);
+        }
+    };
+
+    patchManager = new PatchManager(appDataPath, sendToUI, GITHUB_TOKEN);
+    discordManager = new DiscordManager(sendToUI);
+    // Screenshot : capturer
+    screenshotManager = new ScreenshotManager(appDataPath, (event, data) => {
+        sendToUI(event, data);
+        if (event === 'screenshot:captured') {
+            createCaptureNotification(data);
+        }
+    });
+
+    const s = loadSettings();
+    if (s.screenshotDir) screenshotManager.setDirectory(s.screenshotDir);
 
     // Session : envoyer au renderer ET mettre à jour la présence Discord côté main
-    // On garde trace du dernier statut pour éviter de rappeler setPresence à chaque tick de poll.
     let lastSessionStatus: string | null = null;
     sessionManager = new SessionManager((event, data) => {
-        mainWindow?.webContents.send(event, data);
+        sendToUI(event, data);
         if (event === 'session:update' && data?.status) {
             const status: string = data.status;
             if (status === 'running') {
@@ -407,13 +443,6 @@ ipcMain.handle('patch:apply', async (_e, p: string) => patchManager!.applyPatch(
 ipcMain.handle('patch:restore', async (_e, p: string) => patchManager!.restoreBackup(p));
 ipcMain.handle('patch:get-local-version', async () => patchManager!.getLocalVersion());
 ipcMain.handle('patch:download-update', async () => patchManager!.downloadUpdate());
-ipcMain.handle('patch:restore-origin-backup', async (_e, gamePath: string) => {
-    const status = sessionManager?.getStatus().status;
-    if (status === 'patching' || status === 'launching' || status === 'running' || status === 'restoring') {
-        return { success: false, error: 'Impossible pendant une session de jeu. Fermez le jeu et réessayez.' };
-    }
-    return patchManager!.restoreFromOriginBackup(gamePath);
-});
 
 // ── Session ───────────────────────────────────────────────────────────────────
 ipcMain.handle('session:start', async (_e, p: string) => {
@@ -573,8 +602,245 @@ app.on('before-quit', async (event) => {
     }
 });
 
+// ── Screenshot ─────────────────────────────────────────────────────────────
+ipcMain.handle('screenshot:capture', async () => screenshotManager?.capture());
+ipcMain.handle('screenshot:list', async (_e, limit?: number) => screenshotManager?.getRecent(limit));
+ipcMain.handle('screenshot:delete', async (_e, p: string) => screenshotManager?.delete(p));
+ipcMain.handle('screenshot:open-folder', () => screenshotManager?.openFolder());
+ipcMain.handle('screenshot:send-discord', async (_e, p: string, title?: string, userId?: string) => 
+    screenshotManager?.sendToDiscord(p, title, userId));
+ipcMain.handle('screenshot:get-dir', () => screenshotManager?.getDirectory());
+ipcMain.handle('screenshot:set-dir', async (_e, p: string) => {
+    if (screenshotManager?.setDirectory(p)) {
+        saveSettings({ screenshotDir: p });
+        return true;
+    }
+    return false;
+});
+
+ipcMain.on('screenshot:open-modal', (_e, path: string) => {
+    if (notificationWindow) {
+        notificationWindow.close();
+        notificationWindow = null;
+    }
+    createShareWindow(path);
+});
+
+ipcMain.on('screenshot:snippet-ready', (_e, rect: { x: number, y: number, width: number, height: number }) => {
+    if (snippetWindow) {
+        snippetWindow.destroy();
+        snippetWindow = null;
+    }
+    screenshotManager?.capture(rect);
+});
+
+ipcMain.on('screenshot:snippet-cancel', () => {
+    if (snippetWindow) {
+        snippetWindow.destroy();
+        snippetWindow = null;
+    }
+});
+
+function registerScreenshotShortcut() {
+    const s = loadSettings();
+    const key = s.screenshotKey || 'F10';
+    const snippetKey = 'F9';
+
+    try {
+        globalShortcut.unregisterAll();
+        
+        // Screenshot plein écran
+        globalShortcut.register(key, () => {
+            screenshotManager?.capture();
+        });
+
+        // Screenshot zone
+        globalShortcut.register(snippetKey, () => {
+            createSnippetWindow();
+        });
+
+        console.log(`[Main] Hotkeys registered: ${key} (Full), ${snippetKey} (Snippet)`);
+    } catch (e) {
+        console.error('[Main] Failed to register hotkeys:', e);
+    }
+}
+
+function createSnippetWindow() {
+    if (snippetWindow) return;
+
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.bounds;
+
+    snippetWindow = new BrowserWindow({
+        width,
+        height,
+        x: primaryDisplay.bounds.x,
+        y: primaryDisplay.bounds.y,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        focusable: true, // Nécessaire pour capturer echap
+        webPreferences: {
+            preload: join(__dirname, 'preload.js'),
+        },
+    });
+
+    // Niveau max pour passer au dessus de tout
+    snippetWindow.setAlwaysOnTop(true, 'screen-saver');
+
+    if (process.env.VITE_DEV_SERVER_URL) {
+        snippetWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#snippet-tool`);
+    } else {
+        snippetWindow.loadFile(join(__dirname, '../dist/index.html'), {
+            hash: 'snippet-tool'
+        });
+    }
+
+    snippetWindow.on('closed', () => {
+        snippetWindow = null;
+    });
+}
+
+function createCaptureNotification(metadata: ScreenshotMetadata) {
+    if (notificationWindow) {
+        notificationWindow.destroy();
+    }
+
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+
+    notificationWindow = new BrowserWindow({
+        width: 320,
+        height: 100,
+        x: width - 330,
+        y: height - 110,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        focusable: false,
+        type: 'toolbar', // Parfois nécessaire pour l'overlay
+        webPreferences: {
+            preload: join(__dirname, 'preload.js'),
+        },
+    });
+
+    // Forcer au-dessus de tout (y compris certains plein écrans)
+    notificationWindow.setAlwaysOnTop(true, 'screen-saver');
+
+    if (process.env.VITE_DEV_SERVER_URL) {
+        notificationWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#capture-notification?path=${encodeURIComponent(metadata.path)}`);
+    } else {
+        notificationWindow.loadFile(join(__dirname, '../dist/index.html'), {
+            hash: `capture-notification?path=${encodeURIComponent(metadata.path)}`
+        });
+    }
+
+    // Auto-fermeture après 5s
+    setTimeout(() => {
+        if (notificationWindow && !notificationWindow.isDestroyed()) {
+            notificationWindow.close();
+        }
+    }, 5000);
+}
+
+function createShareWindow(path: string) {
+    if (shareWindow) {
+        shareWindow.destroy();
+    }
+
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.bounds;
+
+    shareWindow = new BrowserWindow({
+        width,
+        height,
+        x: primaryDisplay.bounds.x,
+        y: primaryDisplay.bounds.y,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        focusable: true,
+        webPreferences: {
+            preload: join(__dirname, 'preload.js'),
+        },
+    });
+
+    shareWindow.setAlwaysOnTop(true, 'screen-saver');
+    shareWindow.setVisibleOnAllWorkspaces(true); // Pour les multi-écrans/espaces
+
+    const urlParams = `?path=${encodeURIComponent(path)}`;
+    if (process.env.VITE_DEV_SERVER_URL) {
+        shareWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#share-screenshot${urlParams}`);
+    } else {
+        shareWindow.loadFile(join(__dirname, '../dist/index.html'), {
+            hash: `share-screenshot${urlParams}`
+        });
+    }
+
+    shareWindow.on('closed', () => {
+        shareWindow = null;
+    });
+}
+
+ipcMain.on('screenshot:share-done', () => {
+    if (shareWindow) {
+        shareWindow.close();
+    }
+});
+
+ipcMain.on('screenshot:share-cancel', () => {
+    if (shareWindow) {
+        shareWindow.close();
+    }
+});
+
+// ── Protocoles ──────────────────────────────────────────────────────────────
+app.whenReady().then(() => {
+    protocol.handle('local-img', (request) => {
+        try {
+            // Extraction brute pour éviter les parsers qui mangent les colons
+            let path = request.url.replace('local-img://', '');
+            if (path.startsWith('/')) path = path.slice(1);
+            
+            let decodedPath = decodeURIComponent(path);
+            
+            // Correction Windows (si c/Users -> C:/Users)
+            if (process.platform === 'win32') {
+                if (decodedPath.match(/^[a-zA-Z][\\\/]/)) {
+                    decodedPath = decodedPath[0].toUpperCase() + ':' + decodedPath.slice(1);
+                }
+                decodedPath = decodedPath.replace(/\//g, '\\');
+            }
+
+            if (!existsSync(decodedPath)) {
+                console.warn(`[Main] Screenshot not found: ${decodedPath}`);
+                return new Response('Not Found', { status: 404 });
+            }
+
+            // Utilisation d'un stream pour plus de fiabilité que net.fetch sur du local file
+            const data = readFileSync(decodedPath);
+            return new Response(data, {
+                headers: { 'content-type': 'image/png' }
+            });
+        } catch (e) {
+            console.error('[Main] Protocol local-img error:', e);
+            return new Response('Error', { status: 500 });
+        }
+    });
+});
+
 app.whenReady().then(() => {
     initManagers();
+    registerScreenshotShortcut();
     createWindow();
     initAutoUpdater();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
