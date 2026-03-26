@@ -33,6 +33,7 @@ interface LauncherState {
     showOnboarding: boolean;
     toasts: Toast[];
     pendingScreenshot: ScreenshotMetadata | null;
+    isRecording: boolean;
 }
 
 export interface Toast {
@@ -62,7 +63,8 @@ type Action =
     | { type: 'SET_SHOW_ONBOARDING'; payload: boolean }
     | { type: 'ADD_TOAST'; payload: Toast }
     | { type: 'REMOVE_TOAST'; payload: string }
-    | { type: 'SET_PENDING_SCREENSHOT'; payload: ScreenshotMetadata | null };
+    | { type: 'SET_PENDING_SCREENSHOT'; payload: ScreenshotMetadata | null }
+    | { type: 'SET_RECORDING'; payload: boolean };
 
 // ─── Reducer ─────────────────────────────────────────────────────────────────
 function reducer(state: LauncherState, action: Action): LauncherState {
@@ -99,6 +101,8 @@ function reducer(state: LauncherState, action: Action): LauncherState {
             return { ...state, toasts: state.toasts.filter((t) => t.id !== action.payload) };
         case 'SET_PENDING_SCREENSHOT':
             return { ...state, pendingScreenshot: action.payload };
+        case 'SET_RECORDING':
+            return { ...state, isRecording: action.payload };
         default:
             return state;
     }
@@ -119,6 +123,7 @@ const initialState: LauncherState = {
     showOnboarding: false,
     toasts: [],
     pendingScreenshot: null,
+    isRecording: false,
 };
 
 // ─── Contexte ─────────────────────────────────────────────────────────────────
@@ -267,6 +272,23 @@ export function LauncherProvider({ children }: { children: React.ReactNode }) {
                         label: 'Redémarrer pour mettre à jour',
                         onClick: () => window.electronAPI.updaterQuitAndInstall(),
                     },
+                });
+            });
+
+            window.electronAPI.onRecorderStatusUpdate((isRec: boolean) => {
+                dispatch({ type: 'SET_RECORDING', payload: isRec });
+            });
+
+            window.electronAPI.onRecorderSaved((m) => {
+                addToast({
+                    type: 'success',
+                    title: '🎥 Vidéo enregistrée',
+                    message: m.filename,
+                    duration: 8000,
+                    action: {
+                        label: 'Ouvrir le dossier',
+                        onClick: () => window.electronAPI.recorderOpenFolder(),
+                    }
                 });
             });
 

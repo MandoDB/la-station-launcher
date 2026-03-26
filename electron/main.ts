@@ -30,6 +30,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 import { DiscordManager } from './discordManager';
 import { ScreenshotManager, ScreenshotMetadata } from './screenshotManager';
+import { RecorderManager } from './recorderManager';
 import { queryServer, ServerInfo } from './serverQuery';
 import { fetchRemoteMods, applyServerMods, restoreServerMods, resolveActiveMods, ModEntry } from './modManager';
 
@@ -55,6 +56,13 @@ interface AppSettings {
     disabledMods?: string[];
     screenshotDir?: string;
     screenshotKey?: string;
+    screenshotSnippetKey?: string;
+    recorderDir?: string;
+    recorderKey?: string;
+    recorderIndicatorEnabled?: boolean;
+    recorderIndicatorPos?: { x: number, y: number };
+    recorderResolution?: '480p' | '720p' | '1080p' | 'native';
+    recorderFps?: 15 | 30 | 60;
 }
 
 let settingsPath = ''; // initialisé dans initManagers
@@ -86,9 +94,13 @@ let sessionManager: SessionManager | null = null;
 let consoleWatcher: ConsoleWatcher | null = null;
 let discordManager: DiscordManager | null = null;
 let screenshotManager: ScreenshotManager | null = null;
+let recorderManager: RecorderManager | null = null;
 let notificationWindow: BrowserWindow | null = null;
 let snippetWindow: BrowserWindow | null = null;
 let shareWindow: BrowserWindow | null = null;
+let recordingIndicatorWindow: BrowserWindow | null = null;
+let recordingNotificationWindow: BrowserWindow | null = null;
+let recordingSavedNotificationWindow: BrowserWindow | null = null;
 
 // Chemin du backup mods (initialisé dans initManagers)
 let modsBackupPath = '';
@@ -305,6 +317,27 @@ function initManagers(): void {
         if (event === 'screenshot:captured') {
             createCaptureNotification(data);
         }
+    });
+
+    // Recorder : enregistrer
+    recorderManager = new RecorderManager(appDataPath, (isRecording) => {
+        sendToUI('recorder:status-update', isRecording);
+        if (isRecording) {
+            const s = loadSettings();
+            if (s.recorderIndicatorEnabled !== false) {
+                createRecordingIndicatorWindow();
+            }
+            createRecordingNotification();
+        } else {
+            if (recordingIndicatorWindow) {
+                recordingIndicatorWindow.close();
+                recordingIndicatorWindow = null;
+            }
+        }
+    }, (metadata) => {
+        sendToUI('log:entry', `[Recorder] Vidéo sauvegardée : ${metadata.filename}`);
+        sendToUI('recorder:saved', metadata);
+        createRecordingSavedNotification(metadata);
     });
 
     const s = loadSettings();
@@ -533,6 +566,15 @@ ipcMain.handle('settings:set', async (_e, patch: Partial<AppSettings>) => {
         }
     }
 
+    // Rafraîchir les raccourcis si besoin
+    if ('screenshotKey' in patch || 'screenshotSnippetKey' in patch || 'recorderKey' in patch) {
+        registerHotkeys();
+    }
+
+    if ('recorderDir' in patch && patch.recorderDir) {
+        recorderManager?.setVideosDir(patch.recorderDir);
+    }
+
     return updated;
 });
 
@@ -606,7 +648,19 @@ app.on('before-quit', async (event) => {
 ipcMain.handle('screenshot:capture', async () => screenshotManager?.capture());
 ipcMain.handle('screenshot:list', async (_e, limit?: number) => screenshotManager?.getRecent(limit));
 ipcMain.handle('screenshot:delete', async (_e, p: string) => screenshotManager?.delete(p));
-ipcMain.handle('screenshot:open-folder', () => screenshotManager?.openFolder());
+ipcMain.handle('recorder:list', async (_e, limit?: number) => recorderManager?.getVideos(limit));
+ipcMain.handle('recorder:delete', async (_e, p: string) => recorderManager?.deleteVideo(p));
+ipcMain.on('screenshot:open-folder', () => screenshotManager?.openFolder());
+ipcMain.on('recorder:open-folder', () => recorderManager?.openFolder());
+ipcMain.handle('recorder:get-dir', () => recorderManager?.getVideosDir());
+ipcMain.handle('recorder:set-dir', async (_e, path: string) => {
+    const ok = recorderManager?.setVideosDir(path);
+    if (ok) saveSettings({ recorderDir: path });
+    return ok;
+});
+ipcMain.on('window:open-external', (_e, url: string) => {
+    shell.openExternal(url).catch(err => console.error('[Main] Failed to open external:', err));
+});
 ipcMain.handle('screenshot:send-discord', async (_e, p: string, title?: string, userId?: string) => 
     screenshotManager?.sendToDiscord(p, title, userId));
 ipcMain.handle('screenshot:get-dir', () => screenshotManager?.getDirectory());
@@ -618,6 +672,17 @@ ipcMain.handle('screenshot:set-dir', async (_e, p: string) => {
     return false;
 });
 
+ipcMain.on('recorder:indicator-preview', (_e, show: boolean) => {
+    if (show) {
+        createRecordingIndicatorWindow();
+    } else {
+        // Ne fermer que si on n'est pas en train d'enregistrer
+        if (recordingIndicatorWindow && !recorderManager?.isRecordingNow()) {
+            recordingIndicatorWindow.close();
+            recordingIndicatorWindow = null;
+        }
+    }
+});
 ipcMain.on('screenshot:open-modal', (_e, path: string) => {
     if (notificationWindow) {
         notificationWindow.close();
@@ -641,10 +706,11 @@ ipcMain.on('screenshot:snippet-cancel', () => {
     }
 });
 
-function registerScreenshotShortcut() {
+function registerHotkeys() {
     const s = loadSettings();
     const key = s.screenshotKey || 'F10';
-    const snippetKey = 'F9';
+    const snippetKey = s.screenshotSnippetKey || 'F9';
+    const recKey = s.recorderKey || 'F8';
 
     try {
         globalShortcut.unregisterAll();
@@ -659,7 +725,12 @@ function registerScreenshotShortcut() {
             createSnippetWindow();
         });
 
-        console.log(`[Main] Hotkeys registered: ${key} (Full), ${snippetKey} (Snippet)`);
+        // Recorder Toggle
+        globalShortcut.register(recKey, () => {
+            recorderManager?.toggleRecording();
+        });
+
+        console.log(`[Main] Hotkeys registered: ${key} (Full), ${snippetKey} (Snippet), ${recKey} (Record)`);
     } catch (e) {
         console.error('[Main] Failed to register hotkeys:', e);
     }
@@ -749,6 +820,151 @@ function createCaptureNotification(metadata: ScreenshotMetadata) {
     }, 5000);
 }
 
+function createRecordingIndicatorWindow() {
+    if (recordingIndicatorWindow) return;
+
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const settings = loadSettings();
+    
+    // Position par défaut : en haut à gauche avec marge
+    const defaultX = 20;
+    const defaultY = 20;
+
+    const x = settings.recorderIndicatorPos?.x ?? defaultX;
+    const y = settings.recorderIndicatorPos?.y ?? defaultY;
+
+    recordingIndicatorWindow = new BrowserWindow({
+        width: 70,
+        height: 32,
+        x,
+        y,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        focusable: false,
+        type: 'toolbar',
+        webPreferences: {
+            preload: join(__dirname, 'preload.js'),
+        },
+    });
+
+    recordingIndicatorWindow.setAlwaysOnTop(true, 'screen-saver');
+
+    if (process.env.VITE_DEV_SERVER_URL) {
+        recordingIndicatorWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#recording-indicator`);
+    } else {
+        recordingIndicatorWindow.loadFile(join(__dirname, '../dist/index.html'), {
+            hash: 'recording-indicator'
+        });
+    }
+
+    // Sauvegarder la position quand on le déplace
+    recordingIndicatorWindow.on('moved', () => {
+        if (recordingIndicatorWindow) {
+            const [nx, ny] = recordingIndicatorWindow.getPosition();
+            saveSettings({ recorderIndicatorPos: { x: nx, y: ny } });
+        }
+    });
+
+    recordingIndicatorWindow.on('closed', () => {
+        recordingIndicatorWindow = null;
+    });
+}
+
+function createRecordingNotification() {
+    if (recordingNotificationWindow) {
+        recordingNotificationWindow.destroy();
+    }
+
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+
+    recordingNotificationWindow = new BrowserWindow({
+        width: 320,
+        height: 100,
+        x: width - 330,
+        y: height - 110,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        focusable: false,
+        type: 'toolbar',
+        webPreferences: {
+            preload: join(__dirname, 'preload.js'),
+        },
+    });
+
+    recordingNotificationWindow.setAlwaysOnTop(true, 'screen-saver');
+
+    if (process.env.VITE_DEV_SERVER_URL) {
+        recordingNotificationWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#recording-notification`);
+    } else {
+        recordingNotificationWindow.loadFile(join(__dirname, '../dist/index.html'), {
+            hash: 'recording-notification'
+        });
+    }
+
+    // Auto-fermeture après 5s
+    setTimeout(() => {
+        if (recordingNotificationWindow && !recordingNotificationWindow.isDestroyed()) {
+            recordingNotificationWindow.close();
+            recordingNotificationWindow = null;
+        }
+    }, 5000);
+}
+
+function createRecordingSavedNotification(metadata: any) {
+    if (recordingSavedNotificationWindow) {
+        recordingSavedNotificationWindow.destroy();
+    }
+
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+
+    recordingSavedNotificationWindow = new BrowserWindow({
+        width: 320,
+        height: 100,
+        x: width - 330,
+        y: height - 110,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        focusable: false,
+        type: 'toolbar',
+        webPreferences: {
+            preload: join(__dirname, 'preload.js'),
+        },
+    });
+
+    recordingSavedNotificationWindow.setAlwaysOnTop(true, 'screen-saver');
+
+    const url = `recording-saved-notification?path=${encodeURIComponent(metadata.path)}`;
+    if (process.env.VITE_DEV_SERVER_URL) {
+        recordingSavedNotificationWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#${url}`);
+    } else {
+        recordingSavedNotificationWindow.loadFile(join(__dirname, '../dist/index.html'), {
+            hash: url
+        });
+    }
+
+    // Auto-fermeture après 5s
+    setTimeout(() => {
+        if (recordingSavedNotificationWindow && !recordingSavedNotificationWindow.isDestroyed()) {
+            recordingSavedNotificationWindow.close();
+            recordingSavedNotificationWindow = null;
+        }
+    }, 5000);
+}
+
 function createShareWindow(path: string) {
     if (shareWindow) {
         shareWindow.destroy();
@@ -821,18 +1037,20 @@ app.whenReady().then(() => {
                 decodedPath = decodedPath.replace(/\//g, '\\');
             }
 
+            const extension = decodedPath.split('.').pop()?.toLowerCase();
+            const contentType = extension === 'webm' ? 'video/webm' : 'image/png';
+
             if (!existsSync(decodedPath)) {
-                console.warn(`[Main] Screenshot not found: ${decodedPath}`);
+                console.warn(`[Main] File not found: ${decodedPath}`);
                 return new Response('Not Found', { status: 404 });
             }
 
-            // Utilisation d'un stream pour plus de fiabilité que net.fetch sur du local file
             const data = readFileSync(decodedPath);
             return new Response(data, {
-                headers: { 'content-type': 'image/png' }
+                headers: { 'content-type': contentType }
             });
         } catch (e) {
-            console.error('[Main] Protocol local-img error:', e);
+            console.error('[Main] Protocol local protocol error:', e);
             return new Response('Error', { status: 500 });
         }
     });
@@ -840,7 +1058,7 @@ app.whenReady().then(() => {
 
 app.whenReady().then(() => {
     initManagers();
-    registerScreenshotShortcut();
+    registerHotkeys();
     createWindow();
     initAutoUpdater();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

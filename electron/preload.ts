@@ -23,7 +23,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLocalVersion: () => ipcRenderer.invoke('patch:get-local-version'),
   downloadUpdate: () => ipcRenderer.invoke('patch:download-update'),
 
-
   // ── Session ───────────────────────────────────────────────────────────────
   startSession: (p: string) => ipcRenderer.invoke('session:start', p),
   getSessionStatus: () => ipcRenderer.invoke('session:status'),
@@ -50,9 +49,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   screenshotSetDir: (path: string) => ipcRenderer.invoke('screenshot:set-dir', path),
   screenshotSnippetReady: (rect: { x: number, y: number, width: number, height: number }) => ipcRenderer.send('screenshot:snippet-ready', rect),
   screenshotSnippetCancel: () => ipcRenderer.send('screenshot:snippet-cancel'),
+
+  // ── Recorder ───────────────────────────────────────────────────────────────
+  recorderSave: (buffer: ArrayBuffer) => ipcRenderer.invoke('recorder:save', buffer),
+  recorderList: (limit?: number) => ipcRenderer.invoke('recorder:list', limit),
+  recorderDelete: (path: string) => ipcRenderer.invoke('recorder:delete', path),
+  recorderOpenFolder: () => ipcRenderer.send('recorder:open-folder'),
+  recorderGetDir: () => ipcRenderer.invoke('recorder:get-dir'),
+  recorderSetDir: (path: string) => ipcRenderer.invoke('recorder:set-dir', path),
+  onRecorderStatusUpdate: (cb: (isRecording: boolean) => void) => ipcRenderer.on('recorder:status-update', (_e, d) => cb(d)),
+  onRecorderSaved: (cb: (m: any) => void) => ipcRenderer.on('recorder:saved', (_e, d) => cb(d)),
+  recorderIndicatorPreview: (show: boolean) => ipcRenderer.send('recorder:indicator-preview', show),
   onScreenshotCaptured: (cb: (m: any) => void) => ipcRenderer.on('screenshot:captured', (_e, d) => cb(d)),
 
-  // ── Discord IPC ───────────────────────────────────────────────────────────
+  // ── Discord IPC ────────────────────────────────────────────────────────────
   discordGetUser: () => ipcRenderer.invoke('discord:get-user'),
   discordIsReady: () => ipcRenderer.invoke('discord:is-ready'),
   discordSetPresence: (state: string, ts?: number) => ipcRenderer.invoke('discord:set-presence', state, ts),
@@ -67,10 +77,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Updater ───────────────────────────────────────────────────────────────
   updaterQuitAndInstall: () => ipcRenderer.invoke('updater:quit-and-install'),
   updaterIsReady: () => ipcRenderer.invoke('updater:is-ready'),
-
-  // ── Utilitaires ───────────────────────────────────────────────────────────
-
-  openExternal: (url: string) => ipcRenderer.send('shell:open-external', url),
 
   // ── Serveur PZ ────────────────────────────────────────────────────────────
   serverQuery: () => ipcRenderer.invoke('server:query'),
@@ -88,10 +94,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onPatchAutoCheck: (cb: (d: any) => void) => ipcRenderer.on('patch:auto-check', (_e, d) => cb(d)),
   onUpdaterDownloaded: (cb: (d: any) => void) => ipcRenderer.on('updater:downloaded', (_e, d) => cb(d)),
   onShowScreenshotModal: (cb: (path: string) => void) => ipcRenderer.on('screenshot:open-modal', (_e, path) => cb(path)),
+  onRecorderStart: (cb: (event: any, sourceId: string) => void) => ipcRenderer.on('recorder:start', (e, s) => cb(e, s)),
+  onRecorderStop: (cb: () => void) => ipcRenderer.on('recorder:stop', () => cb()),
 
-
-
-
-  // ── Nettoyage ─────────────────────────────────────────────────────────────
+  // ── Utilitaires ────────────────────────────────────────────────────────────
+  openExternal: (url: string) => ipcRenderer.send('window:open-external', url),
   removeAllListeners: (ch: string) => ipcRenderer.removeAllListeners(ch),
 });

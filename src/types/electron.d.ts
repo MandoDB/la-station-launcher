@@ -147,8 +147,37 @@ declare global {
             discordSetPresence: (state: 'idle' | 'patching' | 'playing', startTimestamp?: number) => Promise<void>;
 
             // Settings
-            settingsGet: () => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[]; screenshotDir?: string; screenshotKey?: string }>;
-            settingsSet: (patch: { discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[]; screenshotDir?: string; screenshotKey?: string }) => Promise<{ hasAcceptedGDPR?: boolean; discordRpcEnabled?: boolean; debugMode?: boolean; modsEnabled?: boolean; disabledMods?: string[]; screenshotDir?: string; screenshotKey?: string }>;
+            settingsGet: () => Promise<{ 
+                hasAcceptedGDPR?: boolean; 
+                discordRpcEnabled?: boolean; 
+                debugMode?: boolean; 
+                modsEnabled?: boolean; 
+                disabledMods?: string[]; 
+                screenshotDir?: string; 
+                screenshotKey?: string;
+                screenshotSnippetKey?: string;
+                recorderDir?: string;
+                recorderKey?: string;
+                recorderIndicatorEnabled?: boolean;
+                recorderIndicatorPos?: { x: number, y: number };
+                recorderResolution?: '480p' | '720p' | '1080p' | 'native';
+                recorderFps?: 15 | 30 | 60;
+            }>;
+            settingsSet: (patch: { 
+                discordRpcEnabled?: boolean; 
+                debugMode?: boolean; 
+                modsEnabled?: boolean; 
+                disabledMods?: string[]; 
+                screenshotDir?: string; 
+                screenshotKey?: string;
+                screenshotSnippetKey?: string;
+                recorderDir?: string;
+                recorderKey?: string;
+                recorderIndicatorEnabled?: boolean;
+                recorderIndicatorPos?: { x: number, y: number };
+                recorderResolution?: '480p' | '720p' | '1080p' | 'native';
+                recorderFps?: 15 | 30 | 60;
+            }) => Promise<any>;
 
             // Screenshot
             screenshotCapture: () => Promise<ScreenshotMetadata | null>;
@@ -166,12 +195,25 @@ declare global {
             onScreenshotCaptured: (callback: (metadata: ScreenshotMetadata) => void) => void;
             onShowScreenshotModal: (callback: (path: string) => void) => void;
 
+            // Recorder
+            recorderSave: (buffer: ArrayBuffer) => Promise<{ path: string; timestamp: number; filename: string }>;
+            recorderList: (limit?: number) => Promise<any[]>;
+            recorderDelete: (path: string) => Promise<boolean>;
+            recorderOpenFolder: () => void;
+            recorderGetDir: () => Promise<string>;
+            recorderSetDir: (path: string) => Promise<boolean>;
+            onRecorderStatusUpdate: (callback: (isRecording: boolean) => void) => void;
+            onRecorderSaved: (callback: (metadata: any) => void) => void;
+            onRecorderStart: (callback: (event: any, sourceId: string) => void) => void;
+            onRecorderStop: (callback: () => void) => void;
+
             // Utilitaires
             openExternal: (url: string) => void;
 
             // Événements
             onPatchProgress: (callback: (data: PatchProgressData) => void) => void;
             onSessionUpdate: (callback: (data: SessionUpdateData) => void) => void;
+            recorderIndicatorPreview: (show: boolean) => void;
             onForceRestoreStart: (callback: () => void) => void;
             onLog: (callback: (log: string) => void) => void;
             onConsoleLines: (callback: (lines: ConsoleLine[]) => void) => void;

@@ -75,7 +75,7 @@ const CATEGORIES: { id: Category; label: string; icon: React.ReactNode }[] = [
     },
     {
         id: 'captures',
-        label: 'Captures',
+        label: 'Média & Rec',
         icon: (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" width="15" height="15">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
@@ -147,9 +147,19 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     const [ramError, setRamError]   = useState<string | null>(null);
     const [ramLoaded, setRamLoaded] = useState(false);
 
-    // Screenshots
+    // Screenshots & Clips
     const [screenshotDir, setScreenshotDir] = useState('');
+    const [recorderDir, setRecorderDir] = useState('');
     const [screenshotKey, setScreenshotKey] = useState('F10');
+    const [snippetKey, setSnippetKey] = useState('F9');
+    const [recorderKey, setRecorderKey] = useState('F8');
+    const [recorderIndicatorEnabled, setRecorderIndicatorEnabled] = useState(true);
+    const [recorderPreviewShown, setRecorderPreviewShown] = useState(false);
+    const [recorderResolution, setRecorderResolution] = useState<'480p' | '720p' | '1080p' | 'native'>('1080p');
+    const [recorderFps, setRecorderFps] = useState<15 | 30 | 60>(60);
+    const [recordingShot, setRecordingShot] = useState(false);
+    const [recordingSnippet, setRecordingSnippet] = useState(false);
+    const [recordingRec, setRecordingRec] = useState(false);
 
 
     // ── Chargement initial ────────────────────────────────────────────────────
@@ -161,9 +171,15 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             setModsEnabled(s.modsEnabled !== false);
             setDisabledMods(s.disabledMods ?? []);
             setScreenshotKey(s.screenshotKey || 'F10');
+            setSnippetKey(s.screenshotSnippetKey || 'F9');
+            setRecorderKey(s.recorderKey || 'F8');
+            setRecorderIndicatorEnabled(s.recorderIndicatorEnabled !== false);
+            setRecorderResolution(s.recorderResolution || '1080p');
+            setRecorderFps(s.recorderFps || 60);
         }).catch(() => {});
 
         window.electronAPI.screenshotGetDir().then(setScreenshotDir).catch(() => {});
+        window.electronAPI.recorderGetDir().then(setRecorderDir).catch(() => {});
 
         window.electronAPI.modsList()
             .then((mods) => setModsList(mods ?? []))
@@ -382,22 +398,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             case 'captures':
                 return (
                     <div className={styles.tabContent}>
-                        <p className={styles.tabDesc}>Gestion des captures d'écran en jeu.</p>
+                        <p className={styles.tabDesc}>Gestion des captures d'écran et vidéos en jeu.</p>
                         
-                        <div className={styles.settingsRow}>
-                            <div className={styles.toggleInfo}>
-                                <span className={styles.toggleLabel}>Raccourci clavier</span>
-                                <span className={styles.toggleDesc}>Touche à utiliser en jeu pour prendre une capture.</span>
-                            </div>
-                            <input 
-                                type="text"
-                                className={styles.keyInput}
-                                value={screenshotKey}
-                                readOnly
-                                title="Le changement de touche sera bientôt disponible"
-                            />
-                        </div>
-
                         <div className={styles.settingsRow}>
                             <div className={styles.toggleInfo}>
                                 <span className={styles.toggleLabel}>Dossier d'enregistrement</span>
@@ -413,7 +415,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                 <button 
                                     className={styles.secondaryBtn}
                                     onClick={async () => {
-                                        const path = await window.electronAPI.selectGameFolder(); // On réutilise le sélecteur
+                                        const path = await window.electronAPI.selectGameFolder();
                                         if (path) {
                                             const ok = await window.electronAPI.screenshotSetDir(path);
                                             if (ok) setScreenshotDir(path);
@@ -425,11 +427,198 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             </div>
                         </div>
 
+                        <div className={styles.divider} />
+
+                        <div className={styles.settingsRow}>
+                            <div className={styles.toggleInfo}>
+                                <span className={styles.toggleLabel}>Capture plein écran</span>
+                                <span className={styles.toggleDesc}>Touche pour prendre un screenshot immédiat.</span>
+                            </div>
+                            <button 
+                                className={`${styles.keyInput} ${recordingShot ? styles.recording : ''}`}
+                                onClick={() => setRecordingShot(true)}
+                                onKeyDown={(e) => {
+                                    if (!recordingShot) return;
+                                    e.preventDefault();
+                                    const k = e.key === ' ' ? 'Space' : e.key;
+                                    if (k === 'Escape') { setRecordingShot(false); return; }
+                                    const displayKey = k.length === 1 ? k.toUpperCase() : k;
+                                    setScreenshotKey(displayKey);
+                                    set({ screenshotKey: displayKey });
+                                    setRecordingShot(false);
+                                }}
+                                onBlur={() => setRecordingShot(false)}
+                            >
+                                {recordingShot ? '...' : screenshotKey}
+                            </button>
+                        </div>
+
+                        <div className={styles.settingsRow}>
+                            <div className={styles.toggleInfo}>
+                                <span className={styles.toggleLabel}>Capture zone (Snippet)</span>
+                                <span className={styles.toggleDesc}>Touche pour sélectionner une zone de l'écran.</span>
+                            </div>
+                            <button 
+                                className={`${styles.keyInput} ${recordingSnippet ? styles.recording : ''}`}
+                                onClick={() => setRecordingSnippet(true)}
+                                onKeyDown={(e) => {
+                                    if (!recordingSnippet) return;
+                                    e.preventDefault();
+                                    const k = e.key === ' ' ? 'Space' : e.key;
+                                    if (k === 'Escape') { setRecordingSnippet(false); return; }
+                                    const displayKey = k.length === 1 ? k.toUpperCase() : k;
+                                    setSnippetKey(displayKey);
+                                    set({ screenshotSnippetKey: displayKey });
+                                    setRecordingSnippet(false);
+                                }}
+                                onBlur={() => setRecordingSnippet(false)}
+                            >
+                                {recordingSnippet ? '...' : snippetKey}
+                            </button>
+                        </div>
+
+                        <div className={styles.settingsRow}>
+                            <div className={styles.toggleInfo}>
+                                <span className={styles.toggleLabel}>Clip Vidéo (Record)</span>
+                                <span className={styles.toggleDesc}>Démarrer ou arrêter un enregistrement vidéo.</span>
+                            </div>
+                            <button 
+                                className={`${styles.keyInput} ${recordingRec ? styles.recording : ''}`}
+                                onClick={() => setRecordingRec(true)}
+                                onKeyDown={(e) => {
+                                    if (!recordingRec) return;
+                                    e.preventDefault();
+                                    const k = e.key === ' ' ? 'Space' : e.key;
+                                    if (k === 'Escape') { setRecordingRec(false); return; }
+                                    const displayKey = k.length === 1 ? k.toUpperCase() : k;
+                                    setRecorderKey(displayKey);
+                                    set({ recorderKey: displayKey });
+                                    setRecordingRec(false);
+                                }}
+                                onBlur={() => setRecordingRec(false)}
+                            >
+                                {recordingRec ? '...' : recorderKey}
+                            </button>
+                        </div>
+
                         <div className={styles.infoBox}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
                                 <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
                             </svg>
-                            <span>Les captures peuvent être envoyées sur Discord via les notifications du launcher.</span>
+                            <span>Prendre un screenshot : <strong>{screenshotKey}</strong> (ou <strong>F9</strong> pour une zone).</span>
+                        </div>
+
+                        <div className={styles.divider} />
+
+                        <p className={styles.tabDesc}>Options d'enregistrement vidéo (Clips).</p>
+                        <ToggleRow
+                            label="Indicateur d'enregistrement"
+                            desc="Affiche 'REC' à l'écran quand un enregistrement est en cours."
+                            checked={recorderIndicatorEnabled}
+                            onChange={() => {
+                                const next = !recorderIndicatorEnabled;
+                                setRecorderIndicatorEnabled(next);
+                                set({ recorderIndicatorEnabled: next });
+                            }}
+                            disabled={saving}
+                        />
+
+                        {recorderIndicatorEnabled && (
+                            <div className={styles.settingsRow}>
+                                <div className={styles.toggleInfo}>
+                                    <span className={styles.toggleLabel}>Position de l'indicateur</span>
+                                    <span className={styles.toggleDesc}>
+                                        {recorderPreviewShown 
+                                            ? "Faites glisser l'indicateur à l'endroit désiré." 
+                                            : "Affichez l'indicateur pour le déplacer."}
+                                    </span>
+                                </div>
+                                <button 
+                                    className={`${styles.secondaryBtn} ${recorderPreviewShown ? styles.activeBtn : ''}`}
+                                    onClick={() => {
+                                        const next = !recorderPreviewShown;
+                                        setRecorderPreviewShown(next);
+                                        window.electronAPI.recorderIndicatorPreview(next);
+                                    }}
+                                >
+                                    {recorderPreviewShown ? 'Masquer' : 'Repositionner'}
+                                </button>
+                            </div>
+                        )}
+
+                        <div className={styles.settingsRow}>
+                            <div className={styles.toggleInfo}>
+                                <span className={styles.toggleLabel}>Résolution vidéo</span>
+                                <span className={styles.toggleDesc}>Qualité de l'image pour les clips enregistrés.</span>
+                            </div>
+                            <select 
+                                className={styles.selectInput}
+                                value={recorderResolution}
+                                onChange={(e) => {
+                                    const val = e.target.value as any;
+                                    setRecorderResolution(val);
+                                    set({ recorderResolution: val });
+                                }}
+                            >
+                                <option value="480p">480p (SD)</option>
+                                <option value="720p">720p (HD)</option>
+                                <option value="1080p">1080p (Full HD)</option>
+                                <option value="native">Natif (Source)</option>
+                            </select>
+                        </div>
+
+                        <div className={styles.settingsRow}>
+                            <div className={styles.toggleInfo}>
+                                <span className={styles.toggleLabel}>Fréquence d'images</span>
+                                <span className={styles.toggleDesc}>Fluidité de la vidéo (60 FPS recommandé pour le jeu).</span>
+                            </div>
+                            <select 
+                                className={styles.selectInput}
+                                value={recorderFps}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10) as any;
+                                    setRecorderFps(val);
+                                    set({ recorderFps: val });
+                                }}
+                            >
+                                <option value="15">15 FPS (Basse)</option>
+                                <option value="30">30 FPS</option>
+                                <option value="60">60 FPS</option>
+                            </select>
+                        </div>
+
+                        <div className={styles.infoBox}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+                            </svg>
+                            <span>Démarrer / Arrêter un clip : <strong>{recorderKey}</strong></span>
+                        </div>
+
+                        <div className={styles.settingsRow}>
+                            <div className={styles.toggleInfo}>
+                                <span className={styles.toggleLabel}>Dossier des clips</span>
+                                <span className={styles.toggleDesc}>{recorderDir}</span>
+                            </div>
+                            <div className={styles.btnRow}>
+                                <button 
+                                    className={styles.secondaryBtn}
+                                    onClick={() => window.electronAPI.recorderOpenFolder()}
+                                >
+                                    Ouvrir
+                                </button>
+                                <button 
+                                    className={styles.secondaryBtn}
+                                    onClick={async () => {
+                                        const path = await window.electronAPI.selectGameFolder();
+                                        if (path) {
+                                            const ok = await window.electronAPI.recorderSetDir(path);
+                                            if (ok) setRecorderDir(path);
+                                        }
+                                    }}
+                                >
+                                    Modifier
+                                </button>
+                            </div>
                         </div>
                     </div>
                 );

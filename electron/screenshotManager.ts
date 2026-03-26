@@ -147,7 +147,10 @@ export class ScreenshotManager {
     }
 
     openFolder(): void {
-        shell.openPath(this.screenshotsDir);
+        console.log(`[Screenshot] Opening folder: ${this.screenshotsDir}`);
+        shell.openPath(this.screenshotsDir).then(err => {
+            if (err) console.error(`[Screenshot] Shell openPath error: ${err}`);
+        }).catch(e => console.error(`[Screenshot] Shell openPath rejection: ${e}`));
     }
 
     // ── Envoi Discord ────────────────────────────────────────────────────────

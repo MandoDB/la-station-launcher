@@ -8,7 +8,11 @@ import { Settings } from './pages/Settings/Settings';
 import { LegalNotice, hasAcceptedLegal } from './components/LegalNotice/LegalNotice';
 import { CaptureNotification } from './components/CaptureNotification/CaptureNotification';
 import { SnippetTool } from './components/SnippetTool/SnippetTool';
+import { RecorderTool } from './components/RecorderTool/RecorderTool';
 import { ScreenshotModal } from './components/ScreenshotModal/ScreenshotModal';
+import { RecordingNotification } from './components/RecordingNotification/RecordingNotification';
+import { RecordingIndicator } from './components/RecordingIndicator/RecordingIndicator';
+import { RecordingSavedNotification } from './components/RecordingSavedNotification/RecordingSavedNotification';
 
 const App: React.FC = () => {
     const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedLegal());
@@ -20,14 +24,22 @@ const App: React.FC = () => {
     const [isNotification, setIsNotification] = useState(() => window.location.hash.includes('capture-notification'));
     const [isSnippet, setIsSnippet] = useState(() => window.location.hash.includes('snippet-tool'));
     const [isShare, setIsShare] = useState(() => window.location.hash.includes('share-screenshot'));
+    const [isRecorder, setIsRecorder] = useState(() => window.location.hash.includes('recorder-tool'));
+    const [isRecordingNotification, setIsRecordingNotification] = useState(() => window.location.hash.includes('recording-notification'));
+    const [isRecordingIndicator, setIsRecordingIndicator] = useState(() => window.location.hash.includes('recording-indicator'));
+    const [isRecordingSavedNotification, setIsRecordingSavedNotification] = useState(() => window.location.hash.includes('recording-saved-notification'));
 
-    const showLegalNotice = useMemo(() => !legalAccepted && !isNotification && !isSnippet && !isShare, [legalAccepted, isNotification, isSnippet, isShare]);
+    const showLegalNotice = useMemo(() => !legalAccepted && !isNotification && !isSnippet && !isShare && !isRecorder, [legalAccepted, isNotification, isSnippet, isShare, isRecorder]);
 
     useEffect(() => {
         const handleHashChange = () => {
             setIsNotification(window.location.hash.includes('capture-notification'));
             setIsSnippet(window.location.hash.includes('snippet-tool'));
             setIsShare(window.location.hash.includes('share-screenshot'));
+            setIsRecorder(window.location.hash.includes('recorder-tool'));
+            setIsRecordingNotification(window.location.hash.includes('recording-notification'));
+            setIsRecordingIndicator(window.location.hash.includes('recording-indicator'));
+            setIsRecordingSavedNotification(window.location.hash.includes('recording-saved-notification'));
         };
         window.addEventListener('hashchange', handleHashChange);
         return () => window.removeEventListener('hashchange', handleHashChange);
@@ -53,6 +65,12 @@ const App: React.FC = () => {
         };
     }, []);
 
+    if (isRecorder) {
+        return (
+            <RecorderTool />
+        );
+    }
+
     const handleInstall = async () => {
         setInstalling(true);
         await window.electronAPI.updaterQuitAndInstall();
@@ -69,6 +87,28 @@ const App: React.FC = () => {
     if (isSnippet) {
         return (
             <SnippetTool />
+        );
+    }
+
+    if (isRecordingNotification) {
+        return (
+            <div className="notification-wrapper">
+                <RecordingNotification />
+            </div>
+        );
+    }
+
+    if (isRecordingIndicator) {
+        return (
+            <RecordingIndicator />
+        );
+    }
+
+    if (isRecordingSavedNotification) {
+        return (
+            <div className="notification-wrapper">
+                <RecordingSavedNotification />
+            </div>
         );
     }
 

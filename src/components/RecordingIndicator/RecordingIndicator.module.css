@@ -1,0 +1,39 @@
+.container {
+    width: 70px;
+    height: 32px;
+    background: rgba(10, 10, 15, 0.82);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 10px;
+    color: #fff;
+    font-family: 'Outfit', sans-serif;
+    user-select: none;
+    cursor: grab;
+    -webkit-app-region: drag; /* Makes the indicator draggable as a window */
+}
+
+.text {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px rgba(255,255,255,0.2);
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+    background: #ff4757;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #ff4757;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.9); }
+}

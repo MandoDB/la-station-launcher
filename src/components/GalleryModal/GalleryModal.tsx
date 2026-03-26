@@ -10,28 +10,31 @@ interface GalleryModalProps {
 
 export const GalleryModal: React.FC<GalleryModalProps> = ({ onClose }) => {
     const { addToast } = useLauncher();
-    const [screenshots, setScreenshots] = useState<ScreenshotMetadata[]>([]);
+    const [mode, setMode] = useState<'screenshots' | 'clips'>('screenshots');
+    const [items, setItems] = useState<any[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [title, setTitle] = useState('');
     const [isSending, setIsSending] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [viewingPath, setViewingPath] = useState<string | null>(null);
 
-    const loadScreenshots = async () => {
+    const loadItems = async () => {
         setIsLoading(true);
         try {
-            const list = await window.electronAPI.screenshotList(50);
-            setScreenshots(list);
+            const list = mode === 'screenshots' 
+                ? await window.electronAPI.screenshotList(50)
+                : await window.electronAPI.recorderList(50);
+            setItems(list);
         } catch (e) {
-            console.error('Failed to load screenshots', e);
+            console.error('Failed to load items', e);
         } finally {
             setIsLoading(false);
         }
     };
 
     useEffect(() => {
-        loadScreenshots();
-    }, []);
+        loadItems();
+    }, [mode]);
 
     const toggleSelect = (id: string) => {
         const newSet = new Set(selectedIds);
@@ -43,8 +46,9 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({ onClose }) => {
     const handleDelete = async (e: React.MouseEvent, path: string, id: string) => {
         e.stopPropagation();
         if (!confirm('Supprimer cette capture définitivement ?')) return;
-        await window.electronAPI.screenshotDelete(path);
-        setScreenshots(prev => prev.filter(s => s.id !== id));
+        if (mode === 'screenshots') await window.electronAPI.screenshotDelete(path);
+        else await window.electronAPI.recorderDelete(path);
+        setItems(prev => prev.filter(s => s.id !== id));
         const newSet = new Set(selectedIds);
         newSet.delete(id);
         setSelectedIds(newSet);
@@ -57,18 +61,19 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({ onClose }) => {
 
     const handleDeleteSelected = async () => {
         if (selectedIds.size === 0) return;
-        if (!confirm(`Supprimer ces ${selectedIds.size} captures définitivement ?`)) return;
+        if (!confirm(`Supprimer ces ${selectedIds.size} éléments définitivement ?`)) return;
 
-        setIsSending(true); // Re-use sending state for loading
-        const toDelete = screenshots.filter(s => selectedIds.has(s.id));
+        setIsSending(true);
+        const toDelete = items.filter(s => selectedIds.has(s.id));
         
         try {
             for (const s of toDelete) {
-                await window.electronAPI.screenshotDelete(s.path);
+                if (mode === 'screenshots') await window.electronAPI.screenshotDelete(s.path);
+                else await window.electronAPI.recorderDelete(s.path);
             }
-            setScreenshots(prev => prev.filter(s => !selectedIds.has(s.id)));
+            setItems(prev => prev.filter(s => !selectedIds.has(s.id)));
             setSelectedIds(new Set());
-            addToast({ type: 'success', title: 'Supprimé !', message: 'Les captures ont été retirées du disque.' });
+            addToast({ type: 'success', title: 'Supprimé !', message: 'Les fichiers ont été retirés du disque.' });
         } catch (e: any) {
             addToast({ type: 'error', title: 'Erreur', message: e.message });
         } finally {
@@ -78,9 +83,13 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({ onClose }) => {
 
     const handleSend = async () => {
         if (selectedIds.size === 0) return;
+        if (mode === 'clips') {
+            addToast({ type: 'warning', title: 'Indisponible', message: 'Le partage de clips sur Discord arrive bientôt !' });
+            return;
+        }
         
         setIsSending(true);
-        const selectedPaths = screenshots
+        const selectedPaths = items
             .filter(s => selectedIds.has(s.id))
             .map(s => s.path);
 
@@ -115,39 +124,97 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({ onClose }) => {
             >
                 <div className={styles.header}>
                     <div className={styles.titleInfo}>
-                        <h2>Galerie des Captures</h2>
-                        <p>{screenshots.length} images trouvées • {selectedIds.size} sélectionnée(s)</p>
+                        <div className={styles.modalModeSwitch}>
+                            <button 
+                                className={mode === 'screenshots' ? styles.activeMode : ''} 
+                                onClick={() => { setMode('screenshots'); setSelectedIds(new Set()); }}
+                            >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                    <polyline points="21 15 16 10 5 21" />
+                                </svg>
+                                Screenshots
+                            </button>
+                            <button 
+                                className={mode === 'clips' ? styles.activeMode : ''} 
+                                onClick={() => { setMode('clips'); setSelectedIds(new Set()); }}
+                            >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                                    <polygon points="23 7 16 12 23 17 23 7" />
+                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                </svg>
+                                Clips (Video)
+                            </button>
+                        </div>
+                        <p>{items.length} {mode === 'screenshots' ? 'images' : 'vidéos'} trouvées • {selectedIds.size} sélectionnée(s)</p>
                     </div>
-                    <button className={styles.closeBtn} onClick={onClose}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="20" height="20">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                    </button>
+                    <div className={styles.headerActions}>
+                        <button className={styles.folderBtn} onClick={() => mode === 'screenshots' ? window.electronAPI.screenshotOpenFolder() : window.electronAPI.recorderOpenFolder()}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            Ouvrir le dossier
+                        </button>
+                        <button className={styles.closeBtn} onClick={onClose}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="20" height="20">
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div className={styles.content}>
                     {isLoading ? (
                         <div className={styles.empty}>Chargement...</div>
-                    ) : screenshots.length === 0 ? (
+                    ) : items.length === 0 ? (
                         <div className={styles.empty}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                <circle cx="8.5" cy="8.5" r="1.5" />
-                                <polyline points="21 15 16 10 5 21" />
+                                {mode === 'screenshots' ? (
+                                    <>
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                        <circle cx="8.5" cy="8.5" r="1.5" />
+                                        <polyline points="21 15 16 10 5 21" />
+                                    </>
+                                ) : (
+                                    <>
+                                        <polygon points="23 7 16 12 23 17 23 7" />
+                                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                    </>
+                                )}
                             </svg>
-                            <p>Aucune capture d'écran pour le moment.</p>
-                            <small>Utilisez F10 en jeu pour capturer vos moments !</small>
+                            <p>Aucun {mode === 'screenshots' ? "capture d'écran" : "clip vidéo"} pour le moment.</p>
+                            <small>Utilisez {mode === 'screenshots' ? 'F10' : 'F8'} en jeu pour capturer vos moments !</small>
                         </div>
                     ) : (
                         <div className={styles.grid}>
-                            {screenshots.map((s) => (
+                            {items.map((s) => (
                                 <div 
                                     key={s.id} 
-                                    className={`${styles.card} ${selectedIds.has(s.id) ? styles.selected : ''}`}
+                                    className={`${styles.card} ${selectedIds.has(s.id) ? styles.selected : ''} ${mode === 'clips' ? styles.videoCard : ''}`}
                                     onClick={() => toggleSelect(s.id)}
                                 >
-                                    <img src={`local-img:///${s.path}`} alt={s.filename} className={styles.thumb} />
+                                    {mode === 'screenshots' ? (
+                                        <img src={`local-img:///${s.path}`} alt={s.filename} className={styles.thumb} />
+                                    ) : (
+                                        <div className={styles.videoThumb}>
+                                            <video 
+                                                src={`local-img:///${s.path}#t=0.5`} 
+                                                className={styles.videoPreview} 
+                                                muted 
+                                                playsInline 
+                                                onMouseOver={e => e.currentTarget.play()}
+                                                onMouseOut={e => { e.currentTarget.pause(); e.currentTarget.currentTime = 0.5; }}
+                                            />
+                                            <div className={styles.playIcon}>
+                                                <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                                                    <polygon points="5 3 19 12 5 21 5 3" />
+                                                </svg>
+                                            </div>
+                                            <span className={styles.videoMeta}>{s.filename}</span>
+                                        </div>
+                                    )}
                                     <div className={styles.cardOverlay}>
                                         <div className={styles.check}>
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" width="12" height="12">
@@ -244,14 +311,27 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({ onClose }) => {
                         exit={{ opacity: 0 }}
                         onClick={() => setViewingPath(null)}
                     >
-                        <motion.img 
-                            src={`local-img:///${viewingPath}`} 
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.8, opacity: 0 }}
-                            onClick={(e) => e.stopPropagation()}
-                        />
-                        <button className={styles.lightboxClose}>
+                        {viewingPath.toLowerCase().endsWith('.webm') ? (
+                            <motion.video 
+                                src={`local-img:///${viewingPath}`} 
+                                className={styles.player} 
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.8, opacity: 0 }}
+                                controls 
+                                autoPlay 
+                                onClick={(e) => e.stopPropagation()} 
+                            />
+                        ) : (
+                            <motion.img 
+                                src={`local-img:///${viewingPath}`} 
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.8, opacity: 0 }}
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        )}
+                        <button className={styles.lightboxClose} onClick={() => setViewingPath(null)}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" width="24" height="24">
                                 <line x1="18" y1="6" x2="6" y2="18" />
                                 <line x1="6" y1="6" x2="18" y2="18" />

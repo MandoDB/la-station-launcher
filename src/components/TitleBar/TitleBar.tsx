@@ -130,6 +130,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
                         <span>EN JEU</span>
                     </motion.div>
                 )}
+                {state.isRecording && (
+                    <motion.div
+                        className={`${styles.statusIndicator} ${styles.recordingIndicator}`}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                    >
+                        <span className={`${styles.statusDot} ${styles.recording}`} />
+                        <span className={styles.recLabel}>REC</span>
+                    </motion.div>
+                )}
             </div>
 
             {/* ── Droite : Discord + contrôles ──────────────────────── */}
